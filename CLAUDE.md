@@ -96,6 +96,11 @@ Production mode (`NODE_ENV=production`) disables polling and starts an Express s
 - Cleared on process restart
 - System prompt (`LLM_SYSTEM_PROMPT`) is prepended to every request but not stored in history
 
+## Git conventions
+
+- Use **conventional commits** for all commit messages (e.g. `feat:`, `fix:`, `chore:`, `docs:`)
+- **Never commit unless explicitly asked** — always wait for the user to say so before running `git commit`
+
 ## Response formatting
 
 LLM output (standard Markdown) is converted to Telegram-compatible HTML via `src/libs/formatReply.js`:
