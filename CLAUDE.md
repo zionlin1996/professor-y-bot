@@ -50,7 +50,7 @@ captain-definition            ← CapRover deployment config
 | `OPENAI_MODEL` | No | `gpt-4o-mini` | OpenAI model name |
 | `ANTHROPIC_API_KEY` | If claude | — | Anthropic API key |
 | `CLAUDE_MODEL` | No | `claude-haiku-4-5-20251001` | Claude model name |
-| `LLM_SYSTEM_PROMPT` | No | — | System prompt injected into every request |
+| `LLM_SYSTEM_PROMPT` | No | — | Extra instructions appended after the built-in Professor Y system prompt |
 | `EXTERNAL_URL` | Production | — | Public URL for webhook registration |
 | `NODE_ENV` | No | — | Set to `production` to enable webhook mode |
 | `PORT` | No | `80` | Express server port (production only) |
@@ -99,7 +99,7 @@ Each bot interaction in a group starts a **new thread** with its own isolated co
 - In private chats, one persistent thread is maintained per chat (no branching)
 - Capped at 20 messages per thread (oldest trimmed first)
 - All state is in-memory and cleared on process restart
-- System prompt (`LLM_SYSTEM_PROMPT`) is prepended to every request but not stored in history
+- A built-in Professor Y system prompt is always prepended; `LLM_SYSTEM_PROMPT` env var appends extra instructions after it
 
 ## Git conventions
 

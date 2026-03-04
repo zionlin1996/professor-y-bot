@@ -1,4 +1,11 @@
 const { v4: uuidv4 } = require("uuid");
+const { readFileSync } = require("fs");
+const { join } = require("path");
+
+const DEFAULT_SYSTEM_PROMPT = readFileSync(
+  join(__dirname, "prompt.md"),
+  "utf8",
+).trim();
 
 const BACKENDS = {
   openai: () => require("./backends/openai"),
@@ -53,10 +60,11 @@ class LLMClient {
 
     const messages = [];
 
-    const systemPrompt = process.env.LLM_SYSTEM_PROMPT;
-    if (systemPrompt) {
-      messages.push({ role: "system", content: systemPrompt });
-    }
+    // Always include the default personality; append any extra instructions from env
+    const systemPrompt = [DEFAULT_SYSTEM_PROMPT, process.env.LLM_SYSTEM_PROMPT]
+      .filter(Boolean)
+      .join("\n\n");
+    messages.push({ role: "system", content: systemPrompt });
 
     messages.push(...history);
 
