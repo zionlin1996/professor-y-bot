@@ -20,19 +20,22 @@ bot.onMessage(async (msg) => {
     let userMessage = text;
 
     if (isGroup) {
-      const isMentionedInReply =
-        msg.reply_to_message && text.includes(`@${botUsername}`);
-      if (!isMentionedInReply) return;
+      if (!text.includes(`@${botUsername}`)) return;
 
-      const originalText = msg.reply_to_message.text || "";
-      const replyContent = text
-        .replace(new RegExp(`@${botUsername}`, "g"), "")
-        .trim();
-
-      if (replyContent) {
-        userMessage = `> ${originalText}\n\n${replyContent}`;
+      if (msg.reply_to_message) {
+        // Mentioned inside a reply: replied-to message is the context, mention text is the instruction
+        const originalText = msg.reply_to_message.text || "";
+        const replyContent = text
+          .replace(new RegExp(`@${botUsername}`, "g"), "")
+          .trim();
+        userMessage = replyContent
+          ? `> ${originalText}\n\n${replyContent}`
+          : originalText;
       } else {
-        userMessage = originalText;
+        // Direct mention: use the message itself (minus the @mention) as the prompt
+        userMessage = text
+          .replace(new RegExp(`@${botUsername}`, "g"), "")
+          .trim();
       }
 
       if (!userMessage) return;

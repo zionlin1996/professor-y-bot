@@ -4,13 +4,18 @@ A Telegram bot that proxies group messages to an LLM backend and replies with th
 
 ## How it works
 
-The bot only activates in group chats when **@mentioned inside a reply**. The replied-to message becomes the primary prompt (the "original text"), and the mention message becomes the instruction appended after it. In private chats, the bot responds to all messages.
+The bot activates in group chats whenever it is **@mentioned** — either in a reply or in a standalone message. In private chats, the bot responds to all messages.
 
-**Group trigger flow:**
+**Group trigger — mention inside a reply:**
 1. User replies to any message and includes `@botname` in the reply text
 2. Bot receives: `> [original message]\n\n[reply text without @mention]`
 3. If the reply text is empty (just `@botname`), only the original message is sent as the prompt
 4. LLM response is formatted to Telegram HTML and sent as a reply
+
+**Group trigger — direct mention (no reply):**
+1. User sends a message that includes `@botname` (not as a reply)
+2. The whole message (minus the `@mention`) is sent as the prompt
+3. LLM response is formatted to Telegram HTML and sent as a reply
 
 **Conversation history** is keyed by `chatId:userId`, so each user has an independent conversation thread with the bot — even within the same group.
 
