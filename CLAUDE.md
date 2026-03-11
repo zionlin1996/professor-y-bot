@@ -32,10 +32,12 @@ src/
     backends/
       openai.js               ← OpenAI backend
       claude.js               ← Anthropic Claude backend
+      gemini.js               ← Google Gemini backend
   libs/
     parseMessage.js           ← extracts chatId, userId, text from Telegram msg
     formatReply.js            ← converts LLM markdown output to Telegram HTML
     attachments.js            ← getLastImage() and toImageBlock() for image support
+    preprocess.js             ← slash-command handler (runs before LLM, returns null to short-circuit)
 Dockerfile                    ← production image (node:20.18.1-alpine, port 80)
 captain-definition            ← CapRover deployment config
 .env.example                  ← all supported environment variables
@@ -47,11 +49,13 @@ captain-definition            ← CapRover deployment config
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | Yes | — | Bot token from BotFather |
 | `TELEGRAM_BOT_USERNAME` | Yes | — | Bot username without `@` |
-| `LLM_BACKEND` | No | `openai` | `openai` or `claude` |
+| `LLM_BACKEND` | No | `openai` | `openai`, `claude`, or `gemini` |
 | `OPENAI_API_KEY` | If openai | — | OpenAI API key |
 | `OPENAI_MODEL` | No | `gpt-4o-mini` | OpenAI model name |
 | `ANTHROPIC_API_KEY` | If claude | — | Anthropic API key |
 | `CLAUDE_MODEL` | No | `claude-haiku-4-5-20251001` | Claude model name |
+| `GEMINI_API_KEY` | If gemini | — | Google Gemini API key |
+| `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model name |
 | `LLM_SYSTEM_PROMPT` | No | — | Extra instructions appended after the built-in Professor Y system prompt |
 | `EXTERNAL_URL` | Production | — | Public URL for webhook registration |
 | `NODE_ENV` | No | — | Set to `production` to enable webhook mode |
@@ -109,14 +113,28 @@ Each bot interaction in a group starts a **new thread** with its own isolated co
 - Use **conventional commits** for all commit messages (e.g. `feat:`, `fix:`, `chore:`, `docs:`)
 - **Never commit unless explicitly asked** — always wait for the user to say so before running `git commit`
 
+## Slash commands (preprocess)
+
+Before a message reaches the LLM, `src/libs/preprocess.js` checks whether it exactly matches a registered slash command. If it does, the command handler runs, the bot replies directly, and `null` is returned to skip LLM processing. Non-command messages pass through unchanged.
+
+Add new commands to the `COMMANDS` map in `preprocess.js`:
+```js
+"/mycommand": ({ llm, bot, msg, chatId }) => "reply string",
+```
+
+| Command | Response |
+|---|---|
+| `/provider` | Current backend name and model (e.g. `gemini / gemini-2.5-flash`) |
+
 ## Web search
 
-Both backends have web search enabled by default — no extra configuration needed.
+All backends have web search enabled by default — no extra configuration needed.
 
 | Backend | Mechanism |
 |---|---|
 | Claude | `web_search_20250305` built-in tool; Anthropic executes searches server-side via a standard multi-turn tool loop |
 | OpenAI | `web_search_preview` tool via the Responses API; the tool loop is handled server-side automatically |
+| Gemini | `googleSearch` grounding tool via `@google/genai` |
 
 ## Image support
 
@@ -142,6 +160,7 @@ Images are plumbed from Telegram through to the LLM via a neutral internal forma
 |---|---|
 | Claude | `{ type: "image", source: { type: "base64", media_type, data } }` |
 | OpenAI | `{ type: "input_image", image_url: "data:<mediaType>;base64,<data>" }` (text blocks become `input_text`) |
+| Gemini | `{ inlineData: { mimeType, data } }` (text blocks become `{ text }`) |
 
 ## Response formatting
 

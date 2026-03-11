@@ -10,6 +10,7 @@ const DEFAULT_SYSTEM_PROMPT = readFileSync(
 const BACKENDS = {
   openai: () => require("./backends/openai"),
   claude: () => require("./backends/claude"),
+  gemini: () => require("./backends/gemini"),
 };
 
 const MAX_HISTORY = 20;
@@ -27,8 +28,13 @@ class LLMClient {
 
     const Backend = loadBackend();
     this.backend = new Backend();
+    this.backendName = backendName;
     this.threads = new Map();         // threadId -> messages[]
     this.messageToThread = new Map(); // messageId -> threadId
+  }
+
+  providerInfo() {
+    return `${this.backendName} / ${this.backend.model}`;
   }
 
   createThread() {

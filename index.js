@@ -5,6 +5,7 @@ const setup = require("./src/setup");
 const LLMClient = require("./src/llm");
 const formatReply = require("./src/libs/formatReply");
 const { getLastImage, toImageBlock } = require("./src/libs/attachments");
+const preprocess = require("./src/libs/preprocess");
 const express = require("express");
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -69,6 +70,10 @@ bot.onMessage(async (msg) => {
       }
       threadId = privateThreads.get(chatId);
     }
+
+    const preprocessed = await preprocess(userMessage, { msg, bot, llm, chatId });
+    if (preprocessed == null) return;
+    userMessage = preprocessed;
 
     if (targetAttachment) {
       const file = await bot.getFile(targetAttachment.file_id);
