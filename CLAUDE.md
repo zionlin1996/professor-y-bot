@@ -4,7 +4,7 @@ A Telegram bot that proxies group messages to an LLM backend and replies with th
 
 ## How it works
 
-The bot activates in group chats whenever it is **@mentioned** — either in a reply or in a standalone message. In private chats, the bot responds to all messages. Both text and images are supported.
+The bot activates in group chats whenever it is **@mentioned** — either in a reply or in a standalone message. In private chats, the bot responds to allowed users only (see `PRIVATE_CHAT_ALLOWED_USERS`). Both text and images are supported.
 
 **Forwarded messages are always ignored** — if `msg.forward_origin` is set, the bot silently skips the message regardless of chat type or mention.
 
@@ -61,6 +61,7 @@ captain-definition            ← CapRover deployment config
 | `GEMINI_API_KEY` | If gemini | — | Google Gemini API key |
 | `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model name |
 | `LLM_SYSTEM_PROMPT` | No | — | Extra instructions appended after the built-in Professor Y system prompt |
+| `PRIVATE_CHAT_ALLOWED_USERS` | No | — | Comma-separated Telegram user IDs allowed to use private chat; empty = no one |
 | `EXTERNAL_URL` | Production | — | Public URL for webhook registration |
 | `NODE_ENV` | No | — | Set to `production` to enable webhook mode |
 | `PORT` | No | `80` | Express server port (production only) |
@@ -136,14 +137,26 @@ The default system prompt is assembled in `src/llm/index.js` by loading an order
 
 Before a message reaches the LLM, `src/libs/preprocess.js` checks whether it exactly matches a registered slash command. If it does, the command handler runs, the bot replies directly, and `null` is returned to skip LLM processing. Non-command messages pass through unchanged.
 
-Add new commands to the `COMMANDS` map in `preprocess.js`:
+There are two separate registries with different trigger mechanics:
+
+**Group commands (`COMMANDS`)** — triggered via `@bot /command` (after `@mention` is stripped):
 ```js
 "/mycommand": ({ llm, bot, msg, chatId }) => "reply string",
 ```
 
-| Command | Response |
-|---|---|
-| `/provider` | Current backend name and model (e.g. `gemini / gemini-2.5-flash`) |
+**Private chat commands (`PRIVATE_COMMANDS`)** — triggered by native Telegram bot commands (`/command`), only active in private chats. Handlers may be async; returning `null` suppresses the default reply (use this when the handler sends its own message):
+```js
+"/mycommand": async ({ llm, bot, msg, chatId, privateThreads }) => "reply string",
+```
+
+Commands that use inline keyboards must handle button taps via a `callback_query` listener registered directly in `index.js`. The listener checks `allowedUserIds` and `chat.type === 'private'` before acting.
+
+| Command | Mode | Response |
+|---|---|---|
+| `/provider` | Group | Current backend name and model (e.g. `gemini / gemini-2.5-flash`) |
+| `/start` | Private | Sends a welcome message and attaches a persistent reply keyboard with a "🗑 Clear" button |
+| `/clear` | Private | Shows a confirmation inline keyboard; "Yes, clear" deletes the thread (next message starts fresh), "Cancel" dismisses |
+| `🗑 Clear` | Private | Reply keyboard button — same behaviour as `/clear` |
 
 ## Web search
 

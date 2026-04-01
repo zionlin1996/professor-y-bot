@@ -11,6 +11,10 @@ const express = require("express");
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const botUsername = process.env.TELEGRAM_BOT_USERNAME;
 
+const allowList = process.env.PRIVATE_CHAT_ALLOWED_USERS;
+
+const allowedUserIds = new Set(allowList.split(",").map((id) => +id.trim()));
+
 const bot = new EnhancedBot(token, { mode: process.env.NODE_ENV });
 const llm = new LLMClient();
 
@@ -66,14 +70,28 @@ bot.onMessage(async (msg) => {
 
       if ((!userMessage || userMessage === "") && !targetAttachment) return;
     } else {
-      // Private chat: one persistent thread per chat
+      // Private chat: restricted to allowlist
+      if (!allowedUserIds.has(msg.from?.id)) {
+        await bot.sendMessage(
+          chatId,
+          "Sorry, private chat access is restricted."
+        );
+        return;
+      }
       if (!privateThreads.has(chatId)) {
         privateThreads.set(chatId, llm.createThread());
       }
       threadId = privateThreads.get(chatId);
     }
 
-    const preprocessed = await preprocess(userMessage, { msg, bot, llm, chatId });
+    const preprocessed = await preprocess(userMessage, {
+      msg,
+      bot,
+      llm,
+      chatId,
+      isGroup,
+      privateThreads,
+    });
     if (preprocessed == null) return;
     userMessage = preprocessed;
 
@@ -88,7 +106,10 @@ bot.onMessage(async (msg) => {
       const file = await bot.getFile(targetAttachment.file_id);
       const imageBlock = await toImageBlock(token, file);
       userMessage = [
-        { type: "text", text: userMessage || `${senderPrefix}What is in this image?` },
+        {
+          type: "text",
+          text: userMessage || `${senderPrefix}What is in this image?`,
+        },
         imageBlock,
       ];
     }
@@ -96,17 +117,16 @@ bot.onMessage(async (msg) => {
     await bot.sendChatAction(chatId, "typing");
     const reply = await llm.chat(threadId, userMessage);
 
+    const options = isGroup ? { reply_to_message_id: msg.message_id } : {};
     let sentMsg;
     try {
       sentMsg = await bot.sendMessage(chatId, formatReply(reply), {
-        reply_to_message_id: msg.message_id,
+        ...options,
         parse_mode: "HTML",
       });
     } catch {
       // Fallback to plain text if Telegram rejects the HTML
-      sentMsg = await bot.sendMessage(chatId, reply, {
-        reply_to_message_id: msg.message_id,
-      });
+      sentMsg = await bot.sendMessage(chatId, reply, options);
     }
 
     // Track the user's message and the bot's response so replies to either
@@ -119,8 +139,34 @@ bot.onMessage(async (msg) => {
     console.error("Error handling message:", error);
     await bot.sendMessage(
       msg.chat.id,
-      "Sorry, something went wrong. Please try again.",
+      "Sorry, something went wrong. Please try again."
     );
+  }
+});
+
+bot.on("callback_query", async (query) => {
+  if (query.message?.chat?.type !== "private") return;
+  if (!allowedUserIds.has(query.from?.id)) return;
+
+  const chatId = query.message.chat.id;
+  const messageId = query.message.message_id;
+
+  try {
+    if (query.data === "clear_confirm") {
+      privateThreads.delete(chatId);
+      await bot.answerCallbackQuery(query.id, {
+        text: "Conversation cleared!",
+      });
+      await bot.editMessageText("Conversation cleared. Starting fresh!", {
+        chat_id: chatId,
+        message_id: messageId,
+      });
+    } else if (query.data === "clear_cancel") {
+      await bot.answerCallbackQuery(query.id, { text: "Cancelled." });
+      await bot.deleteMessage(chatId, messageId);
+    }
+  } catch (error) {
+    console.error("Error handling callback query:", error);
   }
 });
 
@@ -128,6 +174,13 @@ async function main() {
   const app = express();
   app.use(express.json());
   await setup({ app, bot }, { mode: process.env.NODE_ENV });
+  await bot.setMyCommands(
+    [
+      { command: "start", description: "Start chatting" },
+      { command: "clear", description: "Clear conversation history" },
+    ],
+    { scope: { type: "all_private_chats" } }
+  );
 }
 
 main();
