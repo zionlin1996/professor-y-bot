@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(yarn add:*)",
-      "mcp__playwright__browser_navigate",
-      "mcp__playwright__browser_run_code"
-    ]
-  }
-}

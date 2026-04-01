@@ -17,6 +17,7 @@ const BACKENDS = {
   openai: () => require("./backends/openai"),
   claude: () => require("./backends/claude"),
   gemini: () => require("./backends/gemini"),
+  lumo: () => require("./backends/lumo"),
 };
 
 const MAX_HISTORY = 20;

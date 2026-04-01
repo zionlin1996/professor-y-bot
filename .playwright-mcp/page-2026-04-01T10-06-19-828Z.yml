@@ -1,0 +1,7 @@
+- generic [ref=e4]:
+  - img [ref=e6]
+  - paragraph [ref=e141]:
+    - text: Loading Lumo
+    - generic:
+      - text: .
+      - generic: Loading

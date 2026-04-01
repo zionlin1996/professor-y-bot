@@ -37,6 +37,7 @@ src/
       openai.js               ← OpenAI backend
       claude.js               ← Anthropic Claude backend
       gemini.js               ← Google Gemini backend
+      lumo.js                 ← Lumo (Proton) backend
   libs/
     parseMessage.js           ← extracts chatId, userId, text from Telegram msg
     formatReply.js            ← converts LLM markdown output to Telegram HTML
@@ -53,13 +54,15 @@ captain-definition            ← CapRover deployment config
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | Yes | — | Bot token from BotFather |
 | `TELEGRAM_BOT_USERNAME` | Yes | — | Bot username without `@` |
-| `LLM_BACKEND` | No | `openai` | `openai`, `claude`, or `gemini` |
+| `LLM_BACKEND` | No | `openai` | `openai`, `claude`, `gemini`, or `lumo` |
 | `OPENAI_API_KEY` | If openai | — | OpenAI API key |
 | `OPENAI_MODEL` | No | `gpt-4o-mini` | OpenAI model name |
 | `ANTHROPIC_API_KEY` | If claude | — | Anthropic API key |
 | `CLAUDE_MODEL` | No | `claude-haiku-4-5-20251001` | Claude model name |
 | `GEMINI_API_KEY` | If gemini | — | Google Gemini API key |
 | `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model name |
+| `LUMO_API_KEY` | If lumo | — | Lumo (Proton) API key |
+| `LUMO_MODEL` | No | `auto` | Lumo model: `auto`, `lumo-fast`, or `lumo-thinking` |
 | `LLM_SYSTEM_PROMPT` | No | — | Extra instructions appended after the built-in Professor Y system prompt |
 | `PRIVATE_CHAT_ALLOWED_USERS` | No | — | Comma-separated Telegram user IDs allowed to use private chat; empty = no one |
 | `EXTERNAL_URL` | Production | — | Public URL for webhook registration |
@@ -167,6 +170,7 @@ All backends have web search enabled by default — no extra configuration neede
 | Claude | `web_search_20250305` built-in tool; Anthropic executes searches server-side via a standard multi-turn tool loop |
 | OpenAI | `web_search_preview` tool via the Responses API; the tool loop is handled server-side automatically |
 | Gemini | `googleSearch` grounding tool via `@google/genai` |
+| Lumo | No web search — not available via the Lumo API |
 
 ## Image support
 
