@@ -145,31 +145,6 @@ bot.onMessage(async (msg) => {
   }
 });
 
-bot.on("callback_query", async (query) => {
-  if (query.message?.chat?.type !== "private") return;
-  if (!allowedUserIds.has(query.from?.id)) return;
-
-  const chatId = query.message.chat.id;
-  const messageId = query.message.message_id;
-
-  try {
-    if (query.data === "clear_confirm") {
-      privateThreads.delete(chatId);
-      await bot.answerCallbackQuery(query.id, {
-        text: "Conversation cleared!",
-      });
-      await bot.editMessageText("Conversation cleared. Starting fresh!", {
-        chat_id: chatId,
-        message_id: messageId,
-      });
-    } else if (query.data === "clear_cancel") {
-      await bot.answerCallbackQuery(query.id, { text: "Cancelled." });
-      await bot.deleteMessage(chatId, messageId);
-    }
-  } catch (error) {
-    console.error("Error handling callback query:", error);
-  }
-});
 
 async function main() {
   startSubscriber(bot);

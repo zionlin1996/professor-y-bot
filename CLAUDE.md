@@ -162,7 +162,7 @@ Commands that use inline keyboards must handle button taps via a `callback_query
 |---|---|---|
 | `/provider` | Group | Current backend name and model (e.g. `gemini / gemini-2.5-flash`) |
 | `/start` | Private | Sends a welcome message and attaches a persistent reply keyboard with a "🗑 Clear" button |
-| `/clear` | Private | Shows a confirmation inline keyboard; "Yes, clear" deletes the thread (next message starts fresh), "Cancel" dismisses |
+| `/clear` | Private | Immediately deletes the current thread and replies "Cleared." |
 | `🗑 Clear` | Private | Reply keyboard button — same behaviour as `/clear` |
 
 ## Web search

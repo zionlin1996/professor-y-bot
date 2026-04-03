@@ -16,17 +16,6 @@ const REPLY_KEYBOARD = {
   persistent: true,
 };
 
-async function sendClearConfirmation(bot, chatId) {
-  await bot.sendMessage(chatId, "Clear the current conversation?", {
-    reply_markup: {
-      inline_keyboard: [[
-        { text: "Yes, clear", callback_data: "clear_confirm" },
-        { text: "Cancel", callback_data: "clear_cancel" },
-      ]],
-    },
-  });
-}
-
 const PRIVATE_COMMANDS = {
   "/start": async ({ bot, chatId }) => {
     await bot.sendMessage(chatId, "Hi! Send me a message to get started.", {
@@ -34,13 +23,13 @@ const PRIVATE_COMMANDS = {
     });
     return null;
   },
-  "/clear": async ({ bot, chatId }) => {
-    await sendClearConfirmation(bot, chatId);
-    return null;
+  "/clear": ({ privateThreads, chatId }) => {
+    privateThreads.delete(chatId);
+    return "Cleared.";
   },
-  "🗑 Clear": async ({ bot, chatId }) => {
-    await sendClearConfirmation(bot, chatId);
-    return null;
+  "🗑 Clear": ({ privateThreads, chatId }) => {
+    privateThreads.delete(chatId);
+    return "Cleared.";
   },
 };
 
