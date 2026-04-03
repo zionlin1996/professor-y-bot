@@ -22,6 +22,8 @@ function formatReply(text) {
       .replace(/<li>([\s\S]*?)<\/li>/g, (_, content) => `• ${content.trim()}\n`)
       // Remove list wrapper tags
       .replace(/<\/?[uo]l>/g, "")
+      // Collapse extra blank lines between consecutive bullet points
+      .replace(/\n\n(• )/g, "\n$1")
       // <hr> → just a newline
       .replace(/<hr\s*\/?>/g, "\n")
       // Strip any remaining unsupported tags, preserving: b, i, u, s, code, pre, a, blockquote
