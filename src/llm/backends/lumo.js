@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+const remindTool = require("../tools/remind");
 
 class LumoBackend {
   constructor() {
@@ -31,13 +32,47 @@ class LumoBackend {
     });
   }
 
-  async complete(messages) {
+  async complete(messages, { chatId } = {}) {
     const normalized = this.normalizeMessages(messages);
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      messages: normalized,
-    });
-    return response.choices[0].message.content;
+
+    const params = { model: this.model, messages: normalized };
+
+    if (remindTool.enabled) {
+      params.tools = [
+        {
+          type: "function",
+          function: {
+            name: remindTool.definition.name,
+            description: remindTool.definition.description,
+            parameters: remindTool.definition.parameters,
+          },
+        },
+      ];
+      params.tool_choice = "auto";
+    }
+
+    let response = await this.client.chat.completions.create(params);
+    let message = response.choices[0].message;
+
+    // Handle tool calls
+    if (message.tool_calls?.length) {
+      params.messages = [...params.messages, message];
+
+      for (const call of message.tool_calls) {
+        const args = JSON.parse(call.function.arguments);
+        const result = await remindTool.execute(args, chatId);
+        params.messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: result,
+        });
+      }
+
+      response = await this.client.chat.completions.create(params);
+      message = response.choices[0].message;
+    }
+
+    return message.content;
   }
 }
 

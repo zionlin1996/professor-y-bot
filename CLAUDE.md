@@ -38,11 +38,14 @@ src/
       claude.js               ← Anthropic Claude backend
       gemini.js               ← Google Gemini backend
       lumo.js                 ← Lumo (Proton) backend
+    tools/
+      remind.js               ← schedule_reminder tool definition + executor (shared across backends)
   libs/
     parseMessage.js           ← extracts chatId, userId, text from Telegram msg
     formatReply.js            ← converts LLM markdown output to Telegram HTML
     attachments.js            ← getLastImage() and toImageBlock() for image support
     preprocess.js             ← slash-command handler (runs before LLM, returns null to short-circuit)
+    subscriber.js             ← Redis Pub/Sub subscriber → bot.sendMessage on notification
 Dockerfile                    ← production image (node:20.18.1-alpine, port 80)
 captain-definition            ← CapRover deployment config
 .env.example                  ← all supported environment variables
@@ -125,6 +128,7 @@ The default system prompt is assembled in `src/llm/index.js` by loading an order
 |---|---|
 | `ROLE.md` | Professor Y persona — identity, tone, language rules, immutable constraints |
 | `BOT.md` | Telegram-specific guidelines — response length, formatting, multi-user awareness |
+| `TOOLS.md` | Custom tool instructions — when and how to call each tool (only loaded when `REDIS_URL` is set) |
 
 **Adding a new prompt file:** create the `.md` file in `src/llm/` and add `loadPrompt("YOURFILE.md")` to the array in `index.js`. Order matters — earlier files take higher precedence.
 

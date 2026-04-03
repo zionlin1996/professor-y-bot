@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+const remindTool = require("../tools/remind");
 
 class OpenAIBackend {
   constructor() {
@@ -29,24 +30,48 @@ class OpenAIBackend {
     });
   }
 
-  async complete(messages) {
+  async complete(messages, { chatId } = {}) {
     const normalized = this.normalizeMessages(messages);
-    // Responses API: supports web_search_preview natively and handles the
-    // tool loop server-side, returning the final answer directly.
     const systemMessage = normalized.find((m) => m.role === "system");
     const inputMessages = normalized.filter((m) => m.role !== "system");
+
+    const tools = [{ type: "web_search_preview" }];
+    if (remindTool.enabled) {
+      tools.push({
+        type: "function",
+        name: remindTool.definition.name,
+        description: remindTool.definition.description,
+        parameters: remindTool.definition.parameters,
+      });
+    }
 
     const params = {
       model: this.model,
       input: inputMessages,
-      tools: [{ type: "web_search_preview" }],
+      tools,
     };
 
     if (systemMessage) {
       params.instructions = systemMessage.content;
     }
 
-    const response = await this.client.responses.create(params);
+    let response = await this.client.responses.create(params);
+
+    // Handle client-side function calls (web_search is server-side and resolves automatically)
+    const functionCalls = response.output.filter((item) => item.type === "function_call");
+    if (functionCalls.length > 0) {
+      const newInput = [...params.input, ...response.output];
+
+      for (const call of functionCalls) {
+        const args = JSON.parse(call.arguments);
+        const result = await remindTool.execute(args, chatId);
+        newInput.push({ type: "function_call_output", call_id: call.call_id, output: result });
+      }
+
+      params.input = newInput;
+      response = await this.client.responses.create(params);
+    }
+
     return response.output_text;
   }
 }

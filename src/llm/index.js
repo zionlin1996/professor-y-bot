@@ -11,6 +11,7 @@ function loadPrompt(filename) {
 const DEFAULT_SYSTEM_PROMPT = [
   loadPrompt("ROLE.md"),
   loadPrompt("BOT.md"),
+  loadPrompt("TOOLS.md"),
 ].join("\n\n");
 
 const BACKENDS = {
@@ -58,7 +59,7 @@ class LLMClient {
     return this.messageToThread.get(messageId) ?? null;
   }
 
-  async chat(threadId, userMessage) {
+  async chat(threadId, userMessage, { chatId } = {}) {
     if (!this.threads.has(threadId)) {
       this.threads.set(threadId, []);
     }
@@ -74,14 +75,18 @@ class LLMClient {
     const messages = [];
 
     // Always include the default personality; append any extra instructions from env
-    const systemPrompt = [DEFAULT_SYSTEM_PROMPT, process.env.LLM_SYSTEM_PROMPT]
+    const systemPrompt = [
+      DEFAULT_SYSTEM_PROMPT,
+      `Current UTC time: ${new Date().toISOString()}`,
+      process.env.LLM_SYSTEM_PROMPT,
+    ]
       .filter(Boolean)
       .join("\n\n");
     messages.push({ role: "system", content: systemPrompt });
 
     messages.push(...history);
 
-    const reply = await this.backend.complete(messages);
+    const reply = await this.backend.complete(messages, { chatId });
     history.push({ role: "assistant", content: reply });
 
     return reply;

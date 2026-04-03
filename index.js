@@ -6,6 +6,7 @@ const LLMClient = require("./src/llm");
 const formatReply = require("./src/libs/formatReply");
 const { getLastImage, toImageBlock } = require("./src/libs/attachments");
 const preprocess = require("./src/libs/preprocess");
+const startSubscriber = require("./src/libs/subscriber");
 const express = require("express");
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -115,7 +116,7 @@ bot.onMessage(async (msg) => {
     }
 
     await bot.sendChatAction(chatId, "typing");
-    const reply = await llm.chat(threadId, userMessage);
+    const reply = await llm.chat(threadId, userMessage, { chatId });
 
     const options = isGroup ? { reply_to_message_id: msg.message_id } : {};
     let sentMsg;
@@ -171,6 +172,8 @@ bot.on("callback_query", async (query) => {
 });
 
 async function main() {
+  startSubscriber(bot);
+
   const app = express();
   app.use(express.json());
   await setup({ app, bot }, { mode: process.env.NODE_ENV });
