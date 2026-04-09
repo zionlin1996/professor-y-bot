@@ -19,8 +19,6 @@ const allowedUserIds = new Set(allowList.split(",").map((id) => +id.trim()));
 const bot = new EnhancedBot(token, { mode: process.env.NODE_ENV });
 const llm = new LLMClient();
 
-const privateThreads = new Map(); // chatId -> threadId for DM conversations
-
 bot.onMessage(async (msg) => {
   try {
     if (msg.forward_origin) return;
@@ -79,10 +77,9 @@ bot.onMessage(async (msg) => {
         );
         return;
       }
-      if (!privateThreads.has(chatId)) {
-        privateThreads.set(chatId, llm.createThread());
-      }
-      threadId = privateThreads.get(chatId);
+      const replyToId = msg.reply_to_message?.message_id;
+      const existingThread = replyToId ? llm.resolveThread(replyToId) : null;
+      threadId = existingThread ?? llm.createThread();
     }
 
     const preprocessed = await preprocess(userMessage, {
@@ -91,7 +88,6 @@ bot.onMessage(async (msg) => {
       llm,
       chatId,
       isGroup,
-      privateThreads,
     });
     if (preprocessed == null) return;
     userMessage = preprocessed;
@@ -118,7 +114,7 @@ bot.onMessage(async (msg) => {
     await bot.sendChatAction(chatId, "typing");
     const reply = await llm.chat(threadId, userMessage, { chatId });
 
-    const options = isGroup ? { reply_to_message_id: msg.message_id } : {};
+    const options = { reply_to_message_id: msg.message_id };
     let sentMsg;
     try {
       sentMsg = await bot.sendMessage(chatId, formatReply(reply), {
@@ -132,10 +128,8 @@ bot.onMessage(async (msg) => {
 
     // Track the user's message and the bot's response so replies to either
     // will continue this thread without needing another @mention.
-    if (isGroup) {
-      llm.trackMessage(msg.message_id, threadId);
-      llm.trackMessage(sentMsg.message_id, threadId);
-    }
+    llm.trackMessage(msg.message_id, threadId);
+    llm.trackMessage(sentMsg.message_id, threadId);
   } catch (error) {
     console.error("Error handling message:", error);
     await bot.sendMessage(
@@ -152,13 +146,6 @@ async function main() {
   const app = express();
   app.use(express.json());
   await setup({ app, bot }, { mode: process.env.NODE_ENV });
-  await bot.setMyCommands(
-    [
-      { command: "start", description: "Start chatting" },
-      { command: "clear", description: "Clear conversation history" },
-    ],
-    { scope: { type: "all_private_chats" } }
-  );
 }
 
 main();

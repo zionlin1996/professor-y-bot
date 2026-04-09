@@ -114,7 +114,7 @@ Each bot interaction in a group starts a **new thread** with its own isolated co
 - `threads: Map<threadId, messages[]>` — conversation history per thread (UUID key)
 - `messageToThread: Map<messageId, threadId>` — tracks which Telegram messages belong to which thread
 - After the bot responds, both the user's triggering message and the bot's response are registered in `messageToThread`
-- In private chats, one persistent thread is maintained per chat (no branching)
+- In private chats, each top-level message starts a new thread; replying to any tracked message (user's or bot's) continues that thread — same model as groups
 - Capped at 20 messages per thread (oldest trimmed first)
 - All state is in-memory and cleared on process restart
 - The system prompt is assembled from ordered `.md` files in `src/llm/` (see below); `LLM_SYSTEM_PROMPT` env var appends extra instructions after them
@@ -144,26 +144,14 @@ The default system prompt is assembled in `src/llm/index.js` by loading an order
 
 Before a message reaches the LLM, `src/libs/preprocess.js` checks whether it exactly matches a registered slash command. If it does, the command handler runs, the bot replies directly, and `null` is returned to skip LLM processing. Non-command messages pass through unchanged.
 
-There are two separate registries with different trigger mechanics:
-
 **Group commands (`COMMANDS`)** — triggered via `@bot /command` (after `@mention` is stripped):
 ```js
 "/mycommand": ({ llm, bot, msg, chatId }) => "reply string",
 ```
 
-**Private chat commands (`PRIVATE_COMMANDS`)** — triggered by native Telegram bot commands (`/command`), only active in private chats. Handlers may be async; returning `null` suppresses the default reply (use this when the handler sends its own message):
-```js
-"/mycommand": async ({ llm, bot, msg, chatId, privateThreads }) => "reply string",
-```
-
-Commands that use inline keyboards must handle button taps via a `callback_query` listener registered directly in `index.js`. The listener checks `allowedUserIds` and `chat.type === 'private'` before acting.
-
 | Command | Mode | Response |
 |---|---|---|
 | `/provider` | Group | Current backend name and model (e.g. `gemini / gemini-2.5-flash`) |
-| `/start` | Private | Sends a welcome message and attaches a persistent reply keyboard with a "🗑 Clear" button |
-| `/clear` | Private | Immediately deletes the current thread and replies "Cleared." |
-| `🗑 Clear` | Private | Reply keyboard button — same behaviour as `/clear` |
 
 ## Web search
 

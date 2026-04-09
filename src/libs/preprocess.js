@@ -7,33 +7,6 @@ const COMMANDS = {
 };
 
 /**
- * Private chat command registry. Triggered by native Telegram bot commands (`/command`).
- * Only active in private chats.
- */
-const REPLY_KEYBOARD = {
-  keyboard: [[{ text: "🗑 Clear" }]],
-  resize_keyboard: true,
-  persistent: true,
-};
-
-const PRIVATE_COMMANDS = {
-  "/start": async ({ bot, chatId }) => {
-    await bot.sendMessage(chatId, "Hi! Send me a message to get started.", {
-      reply_markup: REPLY_KEYBOARD,
-    });
-    return null;
-  },
-  "/clear": ({ privateThreads, chatId }) => {
-    privateThreads.delete(chatId);
-    return "Cleared.";
-  },
-  "🗑 Clear": ({ privateThreads, chatId }) => {
-    privateThreads.delete(chatId);
-    return "Cleared.";
-  },
-};
-
-/**
  * Preprocess a message before it reaches the LLM.
  *
  * Returns the (possibly transformed) message to pass to the next stage,
@@ -47,15 +20,15 @@ const PRIVATE_COMMANDS = {
  * @param {object}       ctx.llm           - LLMClient instance
  * @param {number}       ctx.chatId
  * @param {boolean}      ctx.isGroup
- * @param {Map}          ctx.privateThreads
  * @returns {Promise<string|Array|null>}
  */
 async function preprocess(message, ctx) {
   const { msg, bot, chatId, isGroup } = ctx;
 
+  if (!isGroup) return message;
+
   const text = typeof message === "string" ? message.trim() : "";
-  const registry = isGroup ? COMMANDS : PRIVATE_COMMANDS;
-  const handler = registry[text];
+  const handler = COMMANDS[text];
 
   if (!handler) return message;
 
