@@ -74,6 +74,7 @@ captain-definition            ← CapRover deployment config
 | `LLM_SYSTEM_PROMPT` | No | — | Extra instructions appended after the built-in Professor Y system prompt |
 | `PRIVATE_CHAT_ALLOWED_USERS` | No | — | Comma-separated Telegram user IDs allowed to use private chat; empty = no one |
 | `EXTERNAL_URL` | Production | — | Public URL for webhook registration |
+| `TELEGRAM_WEBHOOK_SECRET` | Recommended | — | Secret token registered with Telegram (`openssl rand -hex 32`); verified via `X-Telegram-Bot-Api-Secret-Token` header to reject forged webhook requests |
 | `NODE_ENV` | No | — | Set to `production` to enable webhook mode |
 | `PORT` | No | `80` | Express server port (production only) |
 
