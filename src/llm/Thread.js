@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require("uuid");
+const { randomBytes } = require("crypto");
 const store = require("../libs/store");
 
 const MAX_HISTORY = 20;
@@ -68,6 +69,21 @@ class Thread {
   async trackMessage(messageId) {
     Thread.messageMap.set(messageId, this.id);
     await store.set(msgKey(messageId), this.id);
+  }
+
+  // Generate a cryptographically random archive token and persist the hash → threadId mapping.
+  // Returns the 32-char hex token.
+  async archive() {
+    const hash = randomBytes(16).toString("hex");
+    await store.set(`archive:${hash}`, this.id);
+    return hash;
+  }
+
+  // Resolve an archive hash to its Thread. Returns null if the hash is unknown or expired.
+  static async resolveArchive(hash) {
+    const threadId = await store.get(`archive:${hash}`);
+    if (!threadId) return null;
+    return Thread.load(threadId);
   }
 }
 

@@ -46,6 +46,7 @@ src/
     formatReply.js            ← converts LLM markdown output to Telegram HTML
     attachments.js            ← getLastImage() and toImageBlock() for image support
     preprocess.js             ← slash-command handler (runs before LLM, returns null to short-circuit)
+    exportHtml.js             ← renders thread history as self-contained HTML (used by GET /archive/:hash)
     redis.js                  ← shared Redis client (null when REDIS_PASSWORD unset)
     store.js                  ← thin wrapper around redis.js: null-guard + TTL, used by Thread
     subscriber.js             ← Redis Pub/Sub subscriber → bot.sendMessage on notification
@@ -88,6 +89,16 @@ yarn dev               # polling mode, NODE_ENV=development
 The project uses a `captain-definition` file pointing to `./Dockerfile`. Pass all environment variables as CapRover app environment variables. `EXTERNAL_URL` must be set to the public HTTPS URL of the app so the webhook is registered on startup.
 
 Production mode (`NODE_ENV=production`) disables polling and starts an Express server on port 80 that receives Telegram updates via `POST /webhook`.
+
+## Conversation archive
+
+The `/export` command generates a shareable link to a read-only HTML view of a conversation thread.
+
+- **Trigger**: reply to any message in the thread and send `/export` (PM) or `@bot /export` (group)
+- **URL format**: `EXTERNAL_URL/archive/{hash}` — the hash is a 128-bit cryptographically random token (`crypto.randomBytes(16)`); security model is "secret link" (the hash is the only credential — no login required)
+- **Rendering**: `GET /archive/:hash` resolves the hash to a `threadId` via Redis, loads the thread, and renders `exportHtml` server-side on every request (always reflects current thread state)
+- **Expiry**: archive tokens use the same 7-day rolling TTL as all thread keys; expired links return 404
+- **Dev mode**: the Express server does not call `app.listen` in development (polling) mode, so archive links are only accessible in production. The `/export` command still generates a valid URL, but it will not resolve locally
 
 ## Telegram setup notes
 
@@ -151,14 +162,15 @@ The default system prompt is assembled in `src/llm/index.js` by loading an order
 
 Before a message reaches the LLM, `src/libs/preprocess.js` checks whether it exactly matches a registered slash command. If it does, the command handler runs, the bot replies directly, and `null` is returned to skip LLM processing. Non-command messages pass through unchanged.
 
-**Group commands (`COMMANDS`)** — triggered via `@bot /command` (after `@mention` is stripped):
+**`COMMANDS`** — triggered via `@bot /command` in groups (after `@mention` is stripped) or `/command` directly in private chats:
 ```js
 "/mycommand": ({ llm, bot, msg, chatId }) => "reply string",
 ```
 
-| Command | Mode | Response |
+| Command | Trigger | Response |
 |---|---|---|
-| `/provider` | Group | Current backend name and model (e.g. `gemini / gemini-2.5-flash`) |
+| `/provider` | Group & PM | Current backend name and model (e.g. `gemini / gemini-2.5-flash`) |
+| `/export` | Group & PM | Returns a shareable `EXTERNAL_URL/archive/{hash}` link for the conversation; must be sent as a reply to any message in the thread |
 
 ## Web search
 

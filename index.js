@@ -5,6 +5,7 @@ const setup = require("./src/setup");
 const LLMClient = require("./src/llm");
 const Thread = require("./src/llm/Thread");
 const formatReply = require("./src/libs/formatReply");
+const exportHtml = require("./src/libs/exportHtml");
 const { getLastImage, toImageBlock } = require("./src/libs/attachments");
 const preprocess = require("./src/libs/preprocess");
 const startSubscriber = require("./src/libs/subscriber");
@@ -144,6 +145,22 @@ async function main() {
 
   const app = express();
   app.use(express.json());
+
+  app.get("/archive/:hash", async (req, res) => {
+    try {
+      const thread = await Thread.resolveArchive(req.params.hash);
+      if (!thread || thread.history.length === 0) {
+        return res.status(404).send("Conversation not found or has expired.");
+      }
+      const html = exportHtml(thread.history, botUsername);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
+    } catch (err) {
+      console.error("Error rendering archive:", err);
+      res.status(500).send("Error rendering conversation.");
+    }
+  });
+
   await setup({ app, bot }, { mode: process.env.NODE_ENV });
 }
 
