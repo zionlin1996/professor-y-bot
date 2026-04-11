@@ -5,7 +5,18 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "NODE_ENV=development nodemon index.js"
+    "dev": "NODE_ENV=development nodemon index.js",
+    "setup:db": "node scripts/setup-db.js",
+    "dev:db:setup": "yarn dev:db:generate && yarn dev:db:push",
+    "dev:db:generate": "prisma generate --schema=prisma/schema.dev.prisma",
+    "dev:db:push": "prisma db push --schema=prisma/schema.dev.prisma",
+    "dev:db:studio": "prisma studio --schema=prisma/schema.dev.prisma",
+    "prod:db:setup": "yarn db:generate && yarn db:push",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:prod": "prisma migrate deploy",
+    "db:studio": "prisma studio"
   },
   "keywords": [
     "telegram",
@@ -18,16 +29,19 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@google/genai": "^1.44.0",
+    "@prisma/client": "^6.13.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "ioredis": "^5.10.1",
     "marked": "^9.0.0",
     "node-telegram-bot-api": "^0.66.0",
     "openai": "^4.28.0",
+    "pg": "^8.20.0",
     "uuidv4": "^6.2.13"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "prisma": "^6.13.0"
   },
   "engines": {
     "node": ">=18.0.0"

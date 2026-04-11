@@ -1,0 +1,12 @@
+// Development schema — SQLite (zero-setup local dev)
+// Used by: yarn dev:db:generate, yarn dev:db:push
+// Set DATABASE_URL=file:./prisma/dev.db in .env
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}

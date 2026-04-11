@@ -1,6 +1,6 @@
 # Professor-Y
 
-A Telegram bot that proxies group messages to an LLM backend and replies with the generated response. No database — purely stateless per process (conversation history lives in memory).
+A Telegram bot that proxies group messages to an LLM backend and replies with the generated response. Conversation history lives in Redis (or in-memory when Redis is unavailable). A Prisma database layer is wired up for persistent structured data; schema is currently empty and ready for models.
 
 ## How it works
 
@@ -50,7 +50,15 @@ src/
     exportHtml.js             ← renders thread history as self-contained HTML (used by GET /archive/:hash)
     redis.js                  ← shared Redis client (null when REDIS_PASSWORD unset)
     store.js                  ← thin wrapper around redis.js: null-guard + TTL, used by Thread
+    db.js                     ← null-safe Prisma client singleton (null when DATABASE_URL unset)
     subscriber.js             ← Redis Pub/Sub subscriber → bot.sendMessage on notification
+prisma/
+  schema.prisma               ← Production schema (PostgreSQL; empty — add models here)
+  schema.dev.prisma           ← Development schema (SQLite; mirrors schema.prisma)
+  migrations/                 ← auto-generated migration files (created when models are added)
+scripts/
+  start.sh                    ← container entrypoint: runs prod:db:setup then yarn start
+  setup-db.js                 ← NODE_ENV-aware DB setup: SQLite for dev, PostgreSQL for prod
 Dockerfile                    ← production image (node:20.18.1-alpine, port 80)
 captain-definition            ← CapRover deployment config
 .env.example                  ← all supported environment variables
@@ -70,6 +78,7 @@ captain-definition            ← CapRover deployment config
 | `PRIVATE_CHAT_ALLOWED_USERS` | No | — | Comma-separated Telegram user IDs allowed to use private chat; empty = no one |
 | `EXTERNAL_URL` | Production | — | Public URL for webhook registration |
 | `TELEGRAM_WEBHOOK_SECRET` | Recommended | — | Secret token registered with Telegram (`openssl rand -hex 32`); verified via `X-Telegram-Bot-Api-Secret-Token` header to reject forged webhook requests |
+| `DATABASE_URL` | No | — | Prisma database URL. SQLite: `file:./prisma/dev.db`. PostgreSQL: `postgresql://user:pass@host:5432/db`. When unset, `getDb()` returns `null` and no DB is used. |
 | `NODE_ENV` | No | — | Set to `production` to enable webhook mode |
 | `PORT` | No | `80` | Express server port (production only) |
 
@@ -78,8 +87,50 @@ captain-definition            ← CapRover deployment config
 ```sh
 cp .env.example .env   # fill in your tokens
 yarn install
+yarn prisma generate   # generate Prisma client (re-run after any schema change)
 yarn dev               # polling mode, NODE_ENV=development
 ```
+
+## Database (Prisma)
+
+The project uses **Prisma 6** as its ORM. Two schema files handle the dev/prod split:
+
+| File | Provider | Used by |
+|---|---|---|
+| `prisma/schema.prisma` | PostgreSQL | production (CapRover) |
+| `prisma/schema.dev.prisma` | SQLite | local development |
+
+Both schemas are currently empty — add models when ready, then run the appropriate migrate/push command.
+
+**Local dev (SQLite)** — zero setup required:
+```sh
+DATABASE_URL=file:./prisma/dev.db   # in .env
+yarn dev:db:setup                   # generates client + pushes schema
+# or to create a named migration:
+yarn dev:db:generate && yarn db:migrate --name <migration-name>
+```
+
+**Production (PostgreSQL on CapRover)**:
+1. Provision a PostgreSQL app in CapRover and get the connection string
+2. Set `DATABASE_URL=postgresql://user:pass@host:5432/dbname` as a CapRover env var
+3. `scripts/start.sh` runs `yarn prod:db:setup` (generate + migrate/push) before starting the app
+
+**npm scripts reference:**
+
+| Script | Action |
+|---|---|
+| `yarn setup:db` | Auto-setup based on `NODE_ENV` (calls `scripts/setup-db.js`) |
+| `yarn dev:db:setup` | Generate dev client + push SQLite schema |
+| `yarn dev:db:generate` | Generate Prisma client from `schema.dev.prisma` |
+| `yarn dev:db:push` | Push schema changes to SQLite (no migration file) |
+| `yarn dev:db:studio` | Open Prisma Studio for SQLite |
+| `yarn prod:db:setup` | Generate prod client + push/migrate PostgreSQL schema |
+| `yarn db:generate` | Generate Prisma client from `schema.prisma` |
+| `yarn db:migrate` | Create a dev migration |
+| `yarn db:migrate:prod` | Deploy migrations in production |
+| `yarn db:studio` | Open Prisma Studio for production DB |
+
+**`src/libs/db.js`** exports `getDb()` — returns a `PrismaClient` instance when `DATABASE_URL` is set, otherwise `null`. Always null-check before use.
 
 ## Deployment (CapRover)
 

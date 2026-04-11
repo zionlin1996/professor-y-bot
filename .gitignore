@@ -24,3 +24,9 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Prisma local SQLite databases
+prisma/*.db
+prisma/*.db-journal
+*.sqlite
+*.sqlite3

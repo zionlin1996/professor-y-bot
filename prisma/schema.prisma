@@ -1,0 +1,12 @@
+// Production schema — PostgreSQL
+// Used by: yarn db:generate, yarn db:push, yarn db:migrate:prod
+// For local dev use prisma/schema.dev.prisma (SQLite) instead.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
