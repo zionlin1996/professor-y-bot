@@ -39,6 +39,8 @@ bot.onMessage(async (msg) => {
     let thread;
 
     if (isGroup) {
+      if (text.includes("白爛+1")) return;
+
       const replyToId = msg.reply_to_message?.message_id;
       const isMentioned = text.includes(`@${botUsername}`);
       thread = replyToId ? await Thread.resolve(replyToId) : null;
