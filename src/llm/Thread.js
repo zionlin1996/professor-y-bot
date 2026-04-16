@@ -1,4 +1,3 @@
-const { v4: uuidv4 } = require("uuid");
 const { randomBytes } = require("crypto");
 const store = require("../libs/store");
 
@@ -31,7 +30,7 @@ class Thread {
 
   // Create a new empty thread and initialise its Redis entry.
   static async create() {
-    const id = uuidv4();
+    const id = randomBytes(16).toString("hex");
     await store.set(threadKey(id), "[]");
     return new Thread(id, []);
   }
