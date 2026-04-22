@@ -242,9 +242,8 @@ The default system prompt is assembled in `src/llm/index.js` by loading an order
 
 | Command | Scope | Description |
 |---|---|---|
-| `/provider` | Group & PM | Current backend name and model (e.g. `gemini / gemini-2.5-flash`) |
+| `/model` | PM only | Shows current backend and model; admin also gets an inline keyboard to switch |
 | `/export` | Group & PM | Returns a shareable `EXTERNAL_URL/archive/{hash}` link; must be sent as a reply to a message in the thread |
-| `/model` | PM only (admin) | Opens a choice action to switch the active backend and model |
 
 **Inline actions:**
 
@@ -281,9 +280,8 @@ Before a message reaches the LLM, `src/libs/preprocess.js` checks whether it exa
 
 | Command | Trigger | Response |
 |---|---|---|
-| `/provider` | Group & PM | Current backend name and model (e.g. `gemini / gemini-2.5-flash`) |
+| `/model` | PM only | Shows current backend and model; admin also gets an inline keyboard to switch |
 | `/export` | Group & PM | Returns a shareable `EXTERNAL_URL/archive/{hash}` link for the conversation; must be sent as a reply to any message in the thread |
-| `/model` | PM only (admin) | Opens an inline keyboard to dynamically switch the active backend and model; admin-only (hardcoded to `yanglin1112`) |
 
 ## Dynamic model switching
 

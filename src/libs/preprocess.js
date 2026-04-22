@@ -8,10 +8,12 @@ const ADMIN_USERNAME = "yanglin1112";
  * default reply (use this when the handler sends its own message).
  */
 const COMMANDS = {
-  "/provider": ({ llm }) => llm.providerInfo(),
-
   "/model": async ({ msg, bot, chatId, llm, isGroup }) => {
-    if (isGroup || msg.from?.username !== ADMIN_USERNAME) return null;
+    if (isGroup) return null;
+
+    if (msg.from?.username !== ADMIN_USERNAME) {
+      return llm.providerInfo();
+    }
 
     const groups = await llm.listModels();
     if (!groups.length) {
