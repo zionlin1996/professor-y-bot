@@ -8,6 +8,8 @@ The bot activates in group chats whenever it is **@mentioned** — either in a r
 
 **Forwarded messages are always ignored** — if `msg.forward_origin` is set, the bot silently skips the message regardless of chat type or mention.
 
+**`!noreply` suppresses the LLM** — if the user message contains `!noreply` anywhere, preprocessing returns `null` immediately and the message is never sent to the LLM. No reply is sent. Handled in `src/libs/preprocess.js`.
+
 **Group trigger — mention inside a reply:**
 1. User replies to any message and includes `@botname` in the reply text
 2. Bot receives: `> [original message]\n\n[reply text without @mention]`
