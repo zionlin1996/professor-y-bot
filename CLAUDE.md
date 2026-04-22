@@ -227,6 +227,49 @@ The default system prompt is assembled in `src/llm/index.js` by loading an order
 - **Never commit unless explicitly asked** — always wait for the user to say so before running `git commit`
 - **Always update CLAUDE.md** after any code change — reflect the intent, behaviour, and any new conventions introduced
 
+## Actions
+
+**Actions** are the mechanisms by which users control bot behaviour outside of normal LLM conversation. There are four types:
+
+| Type | Trigger | Scope | Description |
+|---|---|---|---|
+| **Command action** | `/command` prefix | Group & PM | Slash commands handled in `src/libs/preprocess.js` before the LLM. In groups, requires `@mention` prefix. |
+| **Inline action** | `!` prefix | Group & PM | Tokens embedded anywhere in a message that trigger specific behaviour. Processed in `src/libs/preprocess.js`. |
+| **Menu action** | Reply keyboard | PM only | Interactions driven by Telegram reply keyboards (the keyboard that replaces the text input). Must never be shown or accepted in group chats. |
+| **Choice action** | Inline keyboard | PM only | Interactions driven by Telegram inline keyboards (buttons attached to a message, handled via `callback_query`). Must never be shown or accepted in group chats. |
+
+**Command actions:**
+
+| Command | Scope | Description |
+|---|---|---|
+| `/provider` | Group & PM | Current backend name and model (e.g. `gemini / gemini-2.5-flash`) |
+| `/export` | Group & PM | Returns a shareable `EXTERNAL_URL/archive/{hash}` link; must be sent as a reply to a message in the thread |
+| `/model` | PM only (admin) | Opens a choice action to switch the active backend and model |
+
+**Inline actions:**
+
+| Token | Effect |
+|---|---|
+| `!noreply` | Suppresses the LLM — no reply is sent |
+
+**Menu actions:** none currently.
+
+**Choice actions** (all part of the `/model` flow):
+
+| `callback_data` | Effect |
+|---|---|
+| `mp:{backend}` | Show model list for the chosen provider |
+| `ms:{backend}:{index}` | Select model by index in the cached list |
+| `mb` | Back to provider list |
+
+## Keyword filters
+
+Keyword filters are a separate concept from actions. They are hardcoded string patterns checked before any action handling — if a message matches, the pipeline stops immediately with no reply and no handler runs.
+
+| Keyword | Effect |
+|---|---|
+| `白爛+1` | Message silently dropped; pipeline stops immediately |
+
 ## Slash commands (preprocess)
 
 Before a message reaches the LLM, `src/libs/preprocess.js` checks whether it exactly matches a registered slash command. If it does, the command handler runs, the bot replies directly, and `null` is returned to skip LLM processing. Non-command messages pass through unchanged.
