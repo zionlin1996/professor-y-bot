@@ -3,7 +3,7 @@ const { join } = require("path");
 const store = require("../libs/store");
 
 function loadPrompt(filename) {
-  return readFileSync(join(__dirname, filename), "utf8")
+  return readFileSync(join(__dirname, "prompts", filename), "utf8")
     .trim()
     .replace(/%BOT_NAME%/g, process.env.TELEGRAM_BOT_USERNAME || "bot");
 }

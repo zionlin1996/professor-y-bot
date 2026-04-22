@@ -38,8 +38,10 @@ src/
   llm/
     index.js                  ← LLMClient: backend routing, chat orchestration
     Thread.js                 ← Thread class: history, persistence, message↔thread mapping
-    ROLE.md                   ← Professor Y persona and communication rules
-    BOT.md                    ← Telegram-specific response guidelines (multi-user, formatting)
+    prompts/
+      ROLE.md                 ← Professor Y persona and communication rules
+      BOT.md                  ← Telegram-specific response guidelines (multi-user, formatting)
+      TOOLS.md                ← Custom tool instructions — when and how to call each tool
     backends/
       openai.js               ← OpenAI backend
       claude.js               ← Anthropic Claude backend
@@ -211,12 +213,12 @@ Thread management lives in `src/llm/Thread.js` and is model-agnostic:
 - `Thread.messageMap` — static `Map<messageId, threadId>` shared across all instances; warm-path cache to avoid a Redis round-trip on lookups
 - All Redis keys use a rolling 7-day TTL (managed by `src/libs/store.js`); without Redis, all state is in-memory and cleared on restart
 - In private chats, each top-level message starts a new thread; replying to any tracked message continues that thread — same model as groups
-- The system prompt is assembled from ordered `.md` files in `src/llm/` (see below); `LLM_SYSTEM_PROMPT` env var appends extra instructions after them
+- The system prompt is assembled from ordered `.md` files in `src/llm/prompts/` (see below); `LLM_SYSTEM_PROMPT` env var appends extra instructions after them
 - Each user message is prefixed with `@username: ` (falling back to first name) so the LLM can distinguish between users in a shared thread
 
 ## System prompt files
 
-The default system prompt is assembled in `src/llm/index.js` by loading an ordered list of `.md` files from `src/llm/`:
+The default system prompt is assembled in `src/llm/index.js` by loading an ordered list of `.md` files from `src/llm/prompts/`:
 
 | File | Purpose |
 |---|---|
@@ -224,7 +226,7 @@ The default system prompt is assembled in `src/llm/index.js` by loading an order
 | `BOT.md` | Telegram-specific guidelines — response length, formatting, multi-user awareness |
 | `TOOLS.md` | Custom tool instructions — when and how to call each tool (always loaded) |
 
-**Adding a new prompt file:** create the `.md` file in `src/llm/` and add `loadPrompt("YOURFILE.md")` to the array in `index.js`. Order matters — earlier files take higher precedence.
+**Adding a new prompt file:** create the `.md` file in `src/llm/prompts/` and add `loadPrompt("YOURFILE.md")` to the array in `index.js`. Order matters — earlier files take higher precedence.
 
 **Placeholder substitution:** use `%BOT_NAME%` anywhere in a prompt file; it will be replaced at load time with `TELEGRAM_BOT_USERNAME` from the environment.
 
@@ -340,7 +342,7 @@ The bot recommends restaurants for breakfast, lunch, or dinner based on the user
 - **Genre selection**: LLM suggests 3–4 options based on meal type — breakfast: café, bakery/pastry, brunch, congee, dim sum; lunch: ramen, rice bowl, sushi, Thai, Vietnamese, sandwiches, Indian; dinner: izakaya, Korean BBQ, seafood, Italian, hotpot, steakhouse, tapas — user can also specify their own
 - **Implementation**: `src/llm/tools/recommend-meal.js` — calls Google Places Text Search with `limit: 20`, applies Fisher-Yates shuffle in-place, returns the top 3 results formatted with `formatPlaceResult` (re-exported from `search-map.js`)
 - **Requires**: `GOOGLE_MAPS_API_KEY` env var (same key as `search_map`); returns an error string to the LLM if unset
-- **Tool guidance**: `src/llm/TOOLS.md` contains full LLM orchestration instructions including the genre pool tables and post-recommendation flow
+- **Tool guidance**: `src/llm/prompts/TOOLS.md` contains full LLM orchestration instructions including the genre pool tables and post-recommendation flow
 
 ## GitHub source code lookup
 
@@ -355,7 +357,7 @@ The Claude backend can read source files and search code in this repository via 
 - **MCP server**: `https://api.githubcopilot.com/mcp/` (GitHub's hosted Copilot MCP endpoint); allowlisted to `get_file_contents` and `search_code` only
 - **Requires**: `GITHUB_TOKEN` env var (GitHub Personal Access Token with read scope)
 - **Supported backends**: Claude and OpenAI. Gemini (experimental SDK-only, not wired up) and Lumo (no MCP support) are excluded.
-- **Tool guidance**: `src/llm/TOOLS.md` instructs the LLM when and how to call the GitHub tools
+- **Tool guidance**: `src/llm/prompts/TOOLS.md` instructs the LLM when and how to call the GitHub tools
 
 ## User profiles
 
@@ -367,7 +369,7 @@ Each Telegram user can have a persistent Markdown profile stored in the `user_pr
 - **Keyed by**: Telegram `username` — the only user identity visible to the LLM in the `@username:` message prefix
 - **Format**: free-form Markdown bullet points (e.g. `- Language: English`, `- Interests: climbing`)
 - **Context flow**: `msg.from.id` + `msg.from.username` are threaded through `llm.chat()` → `backend.complete()` → tool `execute()` as `{ chatId, userId, username }`
-- **Tool guidance**: `src/llm/TOOLS.md` instructs the LLM when to call each operation
+- **Tool guidance**: `src/llm/prompts/TOOLS.md` instructs the LLM when to call each operation
 
 ## Image support
 
