@@ -88,6 +88,9 @@ class ClaudeBackend {
       configs: {
         get_file_contents: { enabled: true },
         search_code: { enabled: true },
+        create_branch: { enabled: true },
+        create_or_update_file: { enabled: true },
+        create_pull_request: { enabled: true },
       },
     });
 
@@ -111,7 +114,10 @@ class ClaudeBackend {
     }
 
     const call = (p) =>
-      this.client.beta.messages.create({ ...p, betas: ["mcp-client-2025-11-20"] });
+      this.client.beta.messages.create({
+        ...p,
+        betas: ["mcp-client-2025-11-20"],
+      });
 
     let response = await call(params);
 
@@ -132,9 +138,17 @@ class ClaudeBackend {
             } else if (block.name === recommendMealTool.definition.name) {
               content = await recommendMealTool.execute(block.input);
             } else if (block.name === userProfileTool.getDefinition.name) {
-              content = await userProfileTool.getProfile(block.input, { chatId, userId, username });
+              content = await userProfileTool.getProfile(block.input, {
+                chatId,
+                userId,
+                username,
+              });
             } else if (block.name === userProfileTool.updateDefinition.name) {
-              content = await userProfileTool.updateProfile(block.input, { chatId, userId, username });
+              content = await userProfileTool.updateProfile(block.input, {
+                chatId,
+                userId,
+                username,
+              });
             }
             return { type: "tool_result", tool_use_id: block.id, content };
           }),

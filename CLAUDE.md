@@ -356,18 +356,23 @@ The bot recommends restaurants for breakfast, lunch, or dinner based on the user
 - **Requires**: `GOOGLE_MAPS_API_KEY` env var (same key as `search_map`); returns an error string to the LLM if unset
 - **Tool guidance**: `src/llm/prompts/TOOLS.md` contains full LLM orchestration instructions including the genre pool tables and post-recommendation flow
 
-## GitHub source code lookup
+## GitHub source code lookup and write access
 
-The Claude backend can read source files and search code in this repository via the GitHub MCP server, so users can ask precise questions about how the bot is implemented.
+The Claude and OpenAI backends can read source files, search code, and create branches/files/PRs in this repository via the GitHub MCP server.
 
-- **Trigger**: Any question about the bot's implementation, architecture, a specific feature, or where code is located
-- **Tools exposed**: `get_file_contents` (read a file at a given path/branch) and `search_code` (GitHub code search syntax)
+- **Trigger**: Any question about the bot's implementation, architecture, a specific feature, or where code is located; also any request to create a branch, commit a file, or open a PR
+- **Tools exposed**:
+  - `get_file_contents` — read a file at a given path/branch
+  - `search_code` — GitHub code search syntax
+  - `create_branch` — create a new branch
+  - `create_or_update_file` — commit a file to a branch
+  - `create_pull_request` — open a PR
 - **Flow**: Claude always starts by reading `CLAUDE.md` from the repo to locate the relevant files, then reads the specific source files for precise implementation details
 - **Mechanism**: Both Claude and OpenAI execute MCP tools server-side — no custom dispatch needed in the tool loop
   - **Claude**: `client.beta.messages.create()` with `betas: ["mcp-client-2025-11-20"]`; toolset configured via `mcp_servers` + `mcp_toolset` entry in `tools`
   - **OpenAI**: `client.responses.create()` with `{ type: "mcp", server_label, server_url, headers, allowed_tools }` entry in `tools`
-- **MCP server**: `https://api.githubcopilot.com/mcp/` (GitHub's hosted Copilot MCP endpoint); allowlisted to `get_file_contents` and `search_code` only
-- **Requires**: `GITHUB_TOKEN` env var (GitHub Personal Access Token with read scope)
+- **MCP server**: `https://api.githubcopilot.com/mcp/` (GitHub's hosted Copilot MCP endpoint); allowlisted to the five tools above
+- **Requires**: `GITHUB_TOKEN` env var — a GitHub Personal Access Token (classic, `repo` scope) belonging to a bot account with Write collaborator access to the repo
 - **Supported backends**: Claude and OpenAI. Gemini (experimental SDK-only, not wired up) and Lumo (no MCP support) are excluded.
 - **Tool guidance**: `src/llm/prompts/TOOLS.md` instructs the LLM when and how to call the GitHub tools
 

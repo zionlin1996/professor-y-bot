@@ -90,7 +90,13 @@ class OpenAIBackend {
       server_label: "github",
       server_url: "https://api.githubcopilot.com/mcp/",
       headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` },
-      allowed_tools: ["get_file_contents", "search_code"],
+      allowed_tools: [
+        "get_file_contents",
+        "search_code",
+        "create_branch",
+        "create_or_update_file",
+        "create_pull_request",
+      ],
     });
 
     const params = {
@@ -106,7 +112,9 @@ class OpenAIBackend {
     let response = await this.client.responses.create(params);
 
     // Handle client-side function calls (web_search is server-side and resolves automatically)
-    const functionCalls = response.output.filter((item) => item.type === "function_call");
+    const functionCalls = response.output.filter(
+      (item) => item.type === "function_call",
+    );
     if (functionCalls.length > 0) {
       const newInput = [...params.input, ...response.output];
 
@@ -122,11 +130,23 @@ class OpenAIBackend {
         } else if (call.name === remindTool.definition.name) {
           result = await remindTool.execute(args, { chatId });
         } else if (call.name === userProfileTool.getDefinition.name) {
-          result = await userProfileTool.getProfile(args, { chatId, userId, username });
+          result = await userProfileTool.getProfile(args, {
+            chatId,
+            userId,
+            username,
+          });
         } else if (call.name === userProfileTool.updateDefinition.name) {
-          result = await userProfileTool.updateProfile(args, { chatId, userId, username });
+          result = await userProfileTool.updateProfile(args, {
+            chatId,
+            userId,
+            username,
+          });
         }
-        newInput.push({ type: "function_call_output", call_id: call.call_id, output: result });
+        newInput.push({
+          type: "function_call_output",
+          call_id: call.call_id,
+          output: result,
+        });
       }
 
       params.input = newInput;
