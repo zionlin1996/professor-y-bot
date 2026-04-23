@@ -51,12 +51,20 @@ async function getProfile({ username: targetUsername } = {}, { userId: currentUs
   if (targetUsername) {
     // Cross-user lookup by username
     const record = await db.userProfile.findUnique({ where: { username: targetUsername } });
-    return record?.notes || `No profile found for @${targetUsername}.`;
+    if (!record) return `NOT_REGISTERED: @${targetUsername} has not run /start yet.`;
+    if (!record.notes || record.notes.trim() === "") {
+      return `EMPTY_PROFILE: @${targetUsername} is registered but has no notes saved yet.`;
+    }
+    return record.notes;
   }
 
   if (!currentUserId) return "User identity unavailable.";
   const record = await db.userProfile.findUnique({ where: { id: String(currentUserId) } });
-  return record?.notes || `No profile found for ${currentUsername ? `@${currentUsername}` : "you"}.`;
+  if (!record) return `NOT_REGISTERED: ${currentUsername ? `@${currentUsername}` : "You"} has not run /start yet.`;
+  if (!record.notes || record.notes.trim() === "") {
+    return `EMPTY_PROFILE: ${currentUsername ? `@${currentUsername}` : "You"} is registered but has no notes saved yet.`;
+  }
+  return record.notes;
 }
 
 /**
