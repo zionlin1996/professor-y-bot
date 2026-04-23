@@ -58,8 +58,18 @@ Retrieve the persistent Markdown profile notes you have previously saved about a
 - Omit `username` to fetch the current user's own profile
 - Pass `username` (without @) to look up a different user — e.g. if the user asks "what do you know about @alice?", call with `{ "username": "alice" }`
 
+**Tool response interpretation:**
+
+The tool returns one of three states:
+
+| Response prefix | Meaning | Your action |
+|---|---|---|
+| `NOT_REGISTERED:` | User has never run `/start` | Recommend they run `/start` to create a profile |
+| `EMPTY_PROFILE:` | User exists but has no saved notes | Engage in conversation naturally; gather info and offer to save it via `update_user_profile` |
+| _(none, plain content)_ | User profile with saved notes | Use the notes to inform your reply |
+
 **After calling:**
-You MUST always follow the tool call with a text reply — never return an empty response. Use the retrieved profile to inform your reply; do not recite it back verbatim unless the user explicitly asks.
+You MUST always follow the tool call with a text reply — never return an empty response. Use the retrieved profile to inform your reply; do not recite it back verbatim unless the user explicitly asks. Handle each response state appropriately — do not confuse `NOT_REGISTERED` with `EMPTY_PROFILE`.
 
 ### update_user_profile
 
@@ -136,7 +146,7 @@ Always honour an explicit meal type from the user over the time-based inference.
 
 **Step 2 — Resolve location:**
 
-Call `get_user_profile` first. If the profile contains a saved location, use it silently. If no location is found, ask:
+Call `get_user_profile` first. If the profile contains a saved location, use it silently. If `NOT_REGISTERED` or `EMPTY_PROFILE` and no location in notes, ask:
 > "Where are you looking to eat? (neighbourhood, landmark, or city)"
 
 Do not call `recommend_meal` until a location is confirmed.
