@@ -11,6 +11,44 @@ const ADMIN_USERNAME = "yanglin1112";
  * (use this when the handler sends its own message).
  */
 const COMMANDS = {
+  [SLASH_COMMANDS.START]: async ({ msg, bot }) => {
+    const userId = msg.from?.id;
+    if (!userId) return "Unable to identify you.";
+
+    const db = getDb();
+    if (!db) return "Database not available.";
+
+    const existing = await db.userProfile.findUnique({ where: { id: String(userId) } });
+    if (existing) return "Your profile is already set up. Use /me to view your notes.";
+
+    await db.userProfile.create({
+      data: { id: String(userId), username: msg.from?.username || null },
+    });
+
+    // Notify all admins (level 0) about the new user
+    const admins = await db.userProfile.findMany({ where: { permissionLevel: 0 } });
+    if (admins.length > 0) {
+      const displayName = msg.from?.username ? `@${msg.from.username}` : msg.from?.first_name || String(userId);
+      for (const admin of admins) {
+        await bot.sendMessage(
+          admin.id,
+          `New user joined: ${displayName} (ID: <code>${userId}</code>)\nGrant PM access?`,
+          {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "✓ Enable", callback_data: `up_e:${userId}` },
+                { text: "✗ Ignore", callback_data: `up_i:${userId}` },
+              ]],
+            },
+          },
+        );
+      }
+    }
+
+    return "Profile created! You'll be notified once your access is confirmed.";
+  },
+
   [SLASH_COMMANDS.ME]: async ({ msg, bot, chatId }) => {
     const userId = msg.from?.id;
     const username = msg.from?.username;
@@ -64,7 +102,8 @@ const COMMANDS = {
     const arg = parts[1]?.toLowerCase();
     const enable = arg !== "off";
 
-    await setStealthMode(userId, enable, msg.from?.username);
+    const updated = await setStealthMode(userId, enable);
+    if (!updated) return "No profile found — run /start first to set up your profile.";
     return enable
       ? "Stealth mode ON — your messages will not be stored to the database."
       : "Stealth mode OFF — your messages will be stored normally.";

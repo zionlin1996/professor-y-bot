@@ -4,7 +4,7 @@ A Telegram bot that proxies group messages to an LLM backend and replies with th
 
 ## How it works
 
-The bot activates in group chats whenever it is **@mentioned** — either in a reply or in a standalone message. In private chats, the bot responds to allowed users only (see `PRIVATE_CHAT_ALLOWED_USERS`). Both text and images are supported.
+The bot activates in group chats whenever it is **@mentioned** — either in a reply or in a standalone message. In private chats, the bot responds to users with `permissionLevel >= 2` (or level 0 admins); commands (`/start`, `/me`, etc.) run for everyone. Both text and images are supported.
 
 **Forwarded messages are always ignored** — if `msg.forward_origin` is set, the bot silently skips the message regardless of chat type or mention.
 
@@ -87,7 +87,6 @@ captain-definition            ← CapRover deployment config
 | `GOOGLE_MAPS_API_KEY` | Optional | — | Google Maps API key; required for `search_map` tool (Places API + Geocoding API) |
 | `GITHUB_TOKEN` | Optional | — | GitHub Personal Access Token (read scope); required for GitHub MCP code search tools on the Claude backend |
 | `LLM_SYSTEM_PROMPT` | No | — | Extra instructions appended after the built-in Professor Y system prompt |
-| `PRIVATE_CHAT_ALLOWED_USERS` | No | — | Comma-separated Telegram user IDs allowed to use private chat; empty = no one |
 | `EXTERNAL_URL` | Production | — | Public URL for webhook registration |
 | `TELEGRAM_WEBHOOK_SECRET` | Recommended | — | Secret token registered with Telegram (`openssl rand -hex 32`); verified via `X-Telegram-Bot-Api-Secret-Token` header to reject forged webhook requests |
 | `DATABASE_URL` | No | — | Prisma database URL. SQLite: `file:./prisma/dev.db`. PostgreSQL: `postgresql://user:pass@host:5432/db`. When unset, `getDb()` returns `null` and no DB is used. |
@@ -252,10 +251,11 @@ The default system prompt is assembled in `src/llm/index.js` by loading an order
 
 | Command | Description |
 |---|---|
+| `/start` | Creates the user's profile row in DB — the only way a profile can be created |
 | `/model` | Shows current AI model; admin can switch provider and model via inline keyboard |
 | `/me` | Fetches and displays the user's saved profile notes directly from DB; no LLM involved |
 | `/forget` | Clears the user's profile notes field (keeps the DB row); no LLM involved |
-| `/stealth [on\|off]` | Toggle stealth mode — when on, messages are not stored to DB |
+| `/stealth [on\|off]` | Toggle stealth mode — when on, messages are not stored to DB; requires profile to exist |
 
 **Inline actions:**
 
@@ -266,13 +266,17 @@ The default system prompt is assembled in `src/llm/index.js` by loading an order
 
 **Menu actions:** none currently.
 
-**Choice actions** (all part of the `/model` flow):
+**Choice actions:**
 
-| `callback_data` | Effect |
-|---|---|
-| `mp:{backend}` | Show model list for the chosen provider |
-| `ms:{backend}:{index}` | Select model by index in the cached list |
-| `mb` | Back to provider list |
+| `callback_data` | Flow | Effect |
+|---|---|---|
+| `up_e:{userId}` | `/start` notification | Promote user to level 2; any level-0 admin can act; edits message to confirm |
+| `up_i:{userId}` | `/start` notification | Ignore — user stays at level 1; edits message to confirm |
+| `mp:{backend}` | `/model` | Show model list for the chosen provider |
+| `ms:{backend}:{index}` | `/model` | Select model by index in the cached list |
+| `mb` | `/model` | Back to provider list |
+
+`up_e:`/`up_i:` are handled before the `ADMIN_USERNAME` guard — they check `permissionLevel: 0` in the DB so any admin can act. The `/model` callbacks remain guarded by the hardcoded `ADMIN_USERNAME`.
 
 ## Keyword filters
 
@@ -294,10 +298,11 @@ Return a string to send as a reply, or `null` to handle sending inside the handl
 
 | Command | Response |
 |---|---|
+| `/start` | Creates a new profile row (`id`, `username`); if already exists, confirms and points to `/me` |
 | `/model` | Shows current AI model; admin can switch provider and model via inline keyboard |
 | `/me` | Shows the user's profile notes from DB, or a "no record" message if none exists |
 | `/forget` | Clears the user's profile notes field (row kept); confirms success or reports nothing to clear |
-| `/stealth [on\|off]` | Toggle stealth mode — when on, messages are not stored to DB |
+| `/stealth [on\|off]` | Toggle stealth mode; returns "run /start first" if no profile exists |
 
 ## Dynamic model switching
 
@@ -371,18 +376,20 @@ The Claude backend can read source files and search code in this repository via 
 Each Telegram user can have a persistent Markdown profile stored in the `user_profiles` database table. The LLM reads and writes it autonomously via two tools.
 
 - **`get_user_profile`** — retrieves profile notes for a user; omit `username` for the current user (looked up by `id`), or pass a Telegram username to look up another user (e.g. when someone asks about `@alice`); returns `"No profile found for @username."` if none exists
-- **`update_user_profile`** — upserts the full Markdown notes document; self-updates keyed by `id`; cross-user updates by `username` require the target to have an existing record
+- **`update_user_profile`** — updates the current user's Markdown notes; no `username` parameter (cross-user writes removed); returns a "run /start first" message if no profile exists
 - **Implementation**: `src/llm/tools/user-profile.js` — uses `getDb()` from `src/libs/db.js`; both tools are silently omitted when `DATABASE_URL` is unset
-- **Keyed by**: Telegram `userId` stored as `id String @id` — the primary key, stable across username changes; `username` is stored as a nullable side-channel field, kept fresh on every write, and used for cross-user lookups only
+- **Keyed by**: Telegram `userId` stored as `id String @id` — the primary key, stable across username changes; `username` is stored as a nullable side-channel field set at `/start` time and used for cross-user read lookups only
+- **Profile creation**: exclusively via `/start` command — no lazy upserts anywhere; all write operations that require a profile return a "run /start first" message if none exists
+- **Permission levels**: `permissionLevel Int @default(1)` — 0 = admin (manual DB seed), 1 = new user (no PM chat access), 2 = promoted user (full PM access); admins are notified on `/start` and can promote via inline keyboard
 - **Format**: free-form Markdown bullet points (e.g. `- Language: English`, `- Interests: climbing`)
 - **Context flow**: `msg.from.id` + `msg.from.username` are threaded through `llm.chat()` → `backend.complete()` → tool `execute()` as `{ chatId, userId, username }`
 - **Tool guidance**: `src/llm/prompts/TOOLS.md` instructs the LLM when to call each operation
 
 ## Stealth mode
 
-Users can opt out of DB storage on a per-user basis via `/stealth [on|off]`. The `stealthMode` flag is stored as a column on the existing `user_profiles` table (keyed by `id`) via `src/libs/userPreference.js`. `getStealthMode(userId)` is called in `index.js` for every message and the resulting flag is passed to `Thread.create()` and `Thread.resolve()`; when a thread is resolved from an existing message, `thread.stealth` is also overwritten so mid-conversation toggles take effect immediately. Redis is unaffected — only DB writes are suppressed.
+Users can opt out of DB storage on a per-user basis via `/stealth [on|off]`. Requires a profile to exist (run `/start` first); returns an error if none is found. The `stealthMode` flag is stored as a column on the existing `user_profiles` table (keyed by `id`) via `src/libs/userPreference.js`. `getStealthMode(userId)` is called in `index.js` for every message and the resulting flag is passed to `Thread.create()` and `Thread.resolve()`; when a thread is resolved from an existing message, `thread.stealth` is also overwritten so mid-conversation toggles take effect immediately. Redis is unaffected — only DB writes are suppressed.
 
-`src/libs/userPreference.js` also exposes `getPreferredModel(userId)` and `setPreferredModel(userId, model, username)` for reading and writing the nullable `preferredModel` column, following the same upsert-by-`id` pattern as the stealth helpers.
+`src/libs/userPreference.js` also exposes `getPreferredModel(userId)` / `setPreferredModel(userId, model)` for the nullable `preferredModel` column, and `getPermissionLevel(userId)` which returns the user's `permissionLevel` (or `null` if no profile / DB unavailable). Both set functions use `updateMany` and return `true` if a row was updated, `false` if no profile exists.
 
 ## Image support
 

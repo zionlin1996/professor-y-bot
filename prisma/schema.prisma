@@ -16,8 +16,9 @@ model UserProfile {
   username       String?   @unique
   notes          String    @default("")
   stealthMode    Boolean   @default(false) @map("stealth_mode")
-  preferredModel String?   @map("preferred_model")
-  createdAt      DateTime  @default(now()) @map("created_at")
+  preferredModel  String?   @map("preferred_model")
+  permissionLevel Int       @default(1) @map("permission_level")
+  createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
   threads        Thread[]
   messages       Message[]

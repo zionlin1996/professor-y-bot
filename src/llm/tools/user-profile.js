@@ -26,10 +26,7 @@ const getDefinition = {
 
 const updateDefinition = {
   name: "update_user_profile",
-  description:
-    "Save updated Markdown profile notes for a user. " +
-    "Omit 'username' to update the current user's profile. " +
-    "Pass a Telegram username (without @) to update another user's profile — use this when the conversation is about or involves another member.",
+  description: "Save updated Markdown profile notes for the current user.",
   parameters: {
     type: "object",
     properties: {
@@ -37,11 +34,6 @@ const updateDefinition = {
         type: "string",
         description:
           "The full updated Markdown profile text. Use bullet points grouped by topic. Example:\n- Name: prefers 'Alex'\n- Language: English\n- Interests: climbing, coffee",
-      },
-      username: {
-        type: "string",
-        description:
-          "The Telegram username (without @) of the user whose profile to update. Omit to update the current user's own profile.",
       },
     },
     required: ["notes"],
@@ -68,32 +60,20 @@ async function getProfile({ username: targetUsername } = {}, { userId: currentUs
 }
 
 /**
- * @param {{ notes: string, username?: string }} args
+ * @param {{ notes: string }} args
  * @param {{ chatId: number, userId: number, username?: string }} context
  */
-async function updateProfile({ notes, username: targetUsername }, { userId: currentUserId, username: currentUsername } = {}) {
+async function updateProfile({ notes }, { userId: currentUserId } = {}) {
   const db = getDb();
   if (!db) return "Database not available.";
-
-  if (targetUsername) {
-    // Cross-user update — only works if they already have a profile (no userId available to the LLM)
-    const existing = await db.userProfile.findUnique({ where: { username: targetUsername } });
-    if (!existing) return `No profile found for @${targetUsername} — they need to interact with the bot first.`;
-    await db.userProfile.update({
-      where: { username: targetUsername },
-      data: { notes },
-    });
-    return "Profile updated successfully.";
-  }
-
   if (!currentUserId) return "User identity unavailable.";
-  const id = String(currentUserId);
-  await db.userProfile.upsert({
-    where: { id },
-    update: { notes, ...(currentUsername ? { username: currentUsername } : {}) },
-    create: { id, username: currentUsername || null, notes },
+
+  const { count } = await db.userProfile.updateMany({
+    where: { id: String(currentUserId) },
+    data: { notes },
   });
 
+  if (count === 0) return "No profile found — ask the user to run /start first before I can save notes for them.";
   return "Profile updated successfully.";
 }
 

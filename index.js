@@ -9,7 +9,8 @@ const exportHtml = require("./src/libs/exportHtml");
 const { getLastImage, toImageBlock } = require("./src/libs/attachments");
 const preprocess = require("./src/libs/preprocess");
 const formatInfo = require("./src/libs/formatInfo");
-const { getStealthMode } = require("./src/libs/userPreference");
+const { getStealthMode, getPermissionLevel } = require("./src/libs/userPreference");
+const { getDb } = require("./src/libs/db");
 const { INLINE_COMMANDS, BOT_COMMANDS } = require("./src/constants/commands");
 const startSubscriber = require("./src/libs/subscriber");
 const express = require("express");
@@ -19,9 +20,6 @@ const ADMIN_USERNAME = "yanglin1112";
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const botUsername = process.env.TELEGRAM_BOT_USERNAME;
 
-const allowList = process.env.PRIVATE_CHAT_ALLOWED_USERS;
-
-const allowedUserIds = new Set(allowList.split(",").map((id) => +id.trim()));
 
 const bot = new EnhancedBot(token, { mode: process.env.NODE_ENV });
 const llm = new LLMClient();
@@ -88,12 +86,10 @@ bot.onMessage(async (msg) => {
 
       if ((!userMessage || userMessage === "") && !targetAttachment) return; // nothing to send
     } else {
-      // Private chat: restricted to allowlist
-      if (!allowedUserIds.has(msg.from?.id)) {
-        await bot.sendMessage(
-          chatId,
-          "Sorry, private chat access is restricted.",
-        );
+      // Private chat: gate on permission level (commands have already run via preprocess above)
+      const level = await getPermissionLevel(userId);
+      if (level === null || level === 1) {
+        await bot.sendMessage(chatId, "Sorry, private chat access is restricted.");
         return;
       }
       const replyToId = msg.reply_to_message?.message_id;
@@ -182,6 +178,48 @@ bot.onMessage(async (msg) => {
 
 bot.on("callback_query", async (query) => {
   const { data, message, from } = query;
+
+  // User promotion callbacks — any admin (permission level 0) can act on these
+  if (data.startsWith("up_e:") || data.startsWith("up_i:")) {
+    try {
+      const db = getDb();
+      const actorLevel = db
+        ? (await db.userProfile.findUnique({ where: { id: String(from?.id) } }))?.permissionLevel
+        : null;
+      if (actorLevel !== 0) {
+        await bot.answerCallbackQuery(query.id); // silently dismiss for non-admins
+        return;
+      }
+
+      const actorName = from?.username ? `@${from.username}` : String(from?.id);
+
+      if (data.startsWith("up_e:")) {
+        const targetId = data.slice(5);
+        if (db) {
+          await db.userProfile.updateMany({
+            where: { id: targetId },
+            data: { permissionLevel: 2 },
+          });
+        }
+        await bot.editMessageText(
+          `${message.text}\n\n✓ <b>Enabled</b> by ${actorName}`,
+          { chat_id: message.chat.id, message_id: message.message_id, parse_mode: "HTML" },
+        );
+        await bot.sendMessage(targetId, "Your access has been approved — you can now chat with me in private.");
+      } else {
+        await bot.editMessageText(
+          `${message.text}\n\n— <b>Ignored</b> by ${actorName}`,
+          { chat_id: message.chat.id, message_id: message.message_id, parse_mode: "HTML" },
+        );
+      }
+      await bot.answerCallbackQuery(query.id);
+    } catch (err) {
+      console.error("Error handling promotion callback:", err);
+      await bot.answerCallbackQuery(query.id, { text: "Something went wrong" });
+    }
+    return;
+  }
+
   if (from?.username !== ADMIN_USERNAME) {
     await bot.answerCallbackQuery(query.id); // silently dismiss for non-admins
     return;

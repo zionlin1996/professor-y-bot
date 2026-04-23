@@ -63,21 +63,20 @@ You MUST always follow the tool call with a text reply — never return an empty
 
 ### update_user_profile
 
-Save updated Markdown profile notes for a user.
+Save updated Markdown profile notes for the current user.
 
 **When to call:**
-- After learning something new and persistent about a user (a preference, a fact, important context)
-- When the user explicitly asks you to remember something about themselves or another user
-- After a conversation where meaningful personal details emerged about any participant
+- After learning something new and persistent about the current user (a preference, a fact, important context)
+- When the user explicitly asks you to remember something about themselves
+- After a conversation where meaningful personal details emerged
 
 **When not to call:**
 - For transient information that won't be useful in future conversations
 - For information the user hasn't shared or implied
 
 **How to call:**
-- Omit `username` to update the current user's own profile
-- Pass `username` (without @) to update a different user's profile — e.g. if told "remember that @alice likes hiking", call with `{ "username": "alice", "notes": "..." }`
-- Always call `get_user_profile` first for that user to retrieve existing notes before rewriting
+- Call with `{ "notes": "..." }` to update the current user's own profile
+- Always call `get_user_profile` first to retrieve existing notes before rewriting
 - Rewrite the **full** notes document — keep all existing facts and append new ones. Never truncate.
 - Use Markdown bullet points grouped by topic:
   ```
@@ -89,6 +88,7 @@ Save updated Markdown profile notes for a user.
 
 **After calling:**
 You MUST follow up with a brief text reply — never return an empty response. Confirm what you remembered in one short sentence.
+If the tool returns a "No profile found" message, tell the user to run /start to set up their profile first.
 
 ### search_map
 
