@@ -1,6 +1,6 @@
 # Professor-Y
 
-A Telegram bot that proxies group messages to an LLM backend and replies with the generated response. Conversation history lives in Redis (or in-memory when Redis is unavailable). A Prisma database layer is wired up for persistent structured data. Current models: `UserProfile` (free-form Markdown notes per user, read/written via LLM tool calls), `Thread` (one row per conversation thread), `Message` (one row per user↔LLM exchange, with content, response, model, and optional attachment metadata).
+A Telegram bot that proxies group messages to an LLM backend and replies with the generated response. Conversation history lives in Redis (or in-memory when Redis is unavailable). A Prisma database layer is wired up for persistent structured data. Current models: `UserProfile` (free-form Markdown notes and preferences per user — notes read/written via LLM tool calls, stealth mode flag managed via `/stealth` command), `Thread` (one row per conversation thread), `Message` (one row per user↔LLM exchange, with content, response, model, and optional attachment metadata).
 
 ## How it works
 
@@ -255,6 +255,7 @@ The default system prompt is assembled in `src/llm/index.js` by loading an order
 | `/model` | Shows current AI model; admin can switch provider and model via inline keyboard |
 | `/me` | Fetches and displays the user's saved profile notes directly from DB; no LLM involved |
 | `/forget` | Clears the user's profile notes field (keeps the DB row); no LLM involved |
+| `/stealth [on\|off]` | Toggle stealth mode — when on, messages are not stored to DB |
 
 **Inline actions:**
 
@@ -296,6 +297,7 @@ Return a string to send as a reply, or `null` to handle sending inside the handl
 | `/model` | Shows current AI model; admin can switch provider and model via inline keyboard |
 | `/me` | Shows the user's profile notes from DB, or a "no record" message if none exists |
 | `/forget` | Clears the user's profile notes field (row kept); confirms success or reports nothing to clear |
+| `/stealth [on\|off]` | Toggle stealth mode — when on, messages are not stored to DB |
 
 ## Dynamic model switching
 
@@ -368,13 +370,19 @@ The Claude backend can read source files and search code in this repository via 
 
 Each Telegram user can have a persistent Markdown profile stored in the `user_profiles` database table. The LLM reads and writes it autonomously via two tools.
 
-- **`get_user_profile`** — retrieves profile notes for a user; omit `username` for the current user, or pass a Telegram username to look up another user (e.g. when someone asks about `@alice`); returns `"No profile found for @username."` if none exists
-- **`update_user_profile`** — upserts the full Markdown notes document for the current user
+- **`get_user_profile`** — retrieves profile notes for a user; omit `username` for the current user (looked up by `id`), or pass a Telegram username to look up another user (e.g. when someone asks about `@alice`); returns `"No profile found for @username."` if none exists
+- **`update_user_profile`** — upserts the full Markdown notes document; self-updates keyed by `id`; cross-user updates by `username` require the target to have an existing record
 - **Implementation**: `src/llm/tools/user-profile.js` — uses `getDb()` from `src/libs/db.js`; both tools are silently omitted when `DATABASE_URL` is unset
-- **Keyed by**: Telegram `username` — the only user identity visible to the LLM in the `@username:` message prefix
+- **Keyed by**: Telegram `userId` stored as `id String @id` — the primary key, stable across username changes; `username` is stored as a nullable side-channel field, kept fresh on every write, and used for cross-user lookups only
 - **Format**: free-form Markdown bullet points (e.g. `- Language: English`, `- Interests: climbing`)
 - **Context flow**: `msg.from.id` + `msg.from.username` are threaded through `llm.chat()` → `backend.complete()` → tool `execute()` as `{ chatId, userId, username }`
 - **Tool guidance**: `src/llm/prompts/TOOLS.md` instructs the LLM when to call each operation
+
+## Stealth mode
+
+Users can opt out of DB storage on a per-user basis via `/stealth [on|off]`. The `stealthMode` flag is stored as a column on the existing `user_profiles` table (keyed by `id`) via `src/libs/userPreference.js`. `getStealthMode(userId)` is called in `index.js` for every message and the resulting flag is passed to `Thread.create()` and `Thread.resolve()`; when a thread is resolved from an existing message, `thread.stealth` is also overwritten so mid-conversation toggles take effect immediately. Redis is unaffected — only DB writes are suppressed.
+
+`src/libs/userPreference.js` also exposes `getPreferredModel(userId)` and `setPreferredModel(userId, model, username)` for reading and writing the nullable `preferredModel` column, following the same upsert-by-`id` pattern as the stealth helpers.
 
 ## Image support
 

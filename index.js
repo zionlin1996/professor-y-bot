@@ -9,6 +9,7 @@ const exportHtml = require("./src/libs/exportHtml");
 const { getLastImage, toImageBlock } = require("./src/libs/attachments");
 const preprocess = require("./src/libs/preprocess");
 const formatInfo = require("./src/libs/formatInfo");
+const { getStealthMode } = require("./src/libs/userPreference");
 const { INLINE_COMMANDS, BOT_COMMANDS } = require("./src/constants/commands");
 const startSubscriber = require("./src/libs/subscriber");
 const express = require("express");
@@ -46,20 +47,24 @@ bot.onMessage(async (msg) => {
     const replyAttachment = getLastImage(msg.reply_to_message);
     const targetAttachment = msgAttachment || replyAttachment;
 
+    const userId = msg.from?.id;
+    const stealth = await getStealthMode(userId);
+
     let userMessage = text;
     let thread;
 
     if (isGroup) {
       const replyToId = msg.reply_to_message?.message_id;
       const isMentioned = text.includes(`@${botUsername}`);
-      thread = replyToId ? await Thread.resolve(replyToId) : null;
+      thread = replyToId ? await Thread.resolve(replyToId, { stealth }) : null;
 
       if (thread) {
         // Reply to a tracked message — continue the thread, no @mention needed
+        thread.stealth = stealth;
         userMessage = text;
       } else if (isMentioned) {
         // New @mention — start a fresh thread
-        thread = await Thread.create({ chatId, userId: msg.from?.id });
+        thread = await Thread.create({ chatId, userId, stealth });
 
         if (msg.reply_to_message) {
           // Mentioned inside a reply: replied-to message is the context, mention text is the instruction
@@ -93,8 +98,9 @@ bot.onMessage(async (msg) => {
       }
       const replyToId = msg.reply_to_message?.message_id;
       thread =
-        (replyToId ? await Thread.resolve(replyToId) : null) ??
-        (await Thread.create({ chatId, userId: msg.from?.id }));
+        (replyToId ? await Thread.resolve(replyToId, { stealth }) : null) ??
+        (await Thread.create({ chatId, userId, stealth }));
+      if (thread) thread.stealth = stealth;
     }
 
     // Strip !info token — the flag is captured; the token itself is not part of the user intent
@@ -134,14 +140,14 @@ bot.onMessage(async (msg) => {
     // Append to history and persist user message to DB before calling LLM —
     // guarantees a record even if the LLM fails to respond.
     await thread.appendMessage(processedUserInput, userMessage, {
-      userId: msg.from?.id,
+      userId,
       attachment,
     });
 
     await bot.sendChatAction(chatId, "typing");
     const reply = await llm.chat(thread, {
       chatId,
-      userId: msg.from?.id,
+      userId,
       username: msg.from?.username || msg.from?.first_name,
     });
 

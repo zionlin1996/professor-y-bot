@@ -2,6 +2,7 @@ const SLASH_COMMANDS = {
   MODEL: "/model",
   ME: "/me",
   FORGET: "/forget",
+  STEALTH: "/stealth",
 };
 
 const INLINE_COMMANDS = {
@@ -17,6 +18,7 @@ const BOT_COMMANDS = [
   { command: "model", description: "Show current AI model; switch provider and model (admin only)" },
   { command: "me", description: "Show your saved profile notes" },
   { command: "forget", description: "Clear your saved profile notes" },
+  { command: "stealth", description: "Toggle stealth mode — messages are not stored to DB when on" },
 ];
 
 module.exports = { SLASH_COMMANDS, INLINE_COMMANDS, BOT_COMMANDS };

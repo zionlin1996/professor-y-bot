@@ -12,37 +12,42 @@ datasource db {
 }
 
 model UserProfile {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique
-  notes     String   @default("")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id             String    @id
+  username       String?   @unique
+  notes          String    @default("")
+  stealthMode    Boolean   @default(false) @map("stealth_mode")
+  preferredModel String?   @map("preferred_model")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  threads        Thread[]
+  messages       Message[]
 
   @@map("user_profiles")
 }
 
 model Thread {
-  id        String    @id
-  chatId    String    @map("chat_id")
-  userId    String    @map("user_id")
-  messages  Message[]
-  createdAt DateTime  @default(now()) @map("created_at")
+  id          String       @id
+  chatId      String       @map("chat_id")
+  userId      String       @map("user_id")
+  messages    Message[]
+  userProfile UserProfile? @relation(fields: [userId], references: [id])
+  createdAt   DateTime     @default(now()) @map("created_at")
 
   @@map("threads")
 }
 
 model Message {
-  id                  Int      @id @default(autoincrement())
-  threadId            String   @map("thread_id")
-  userId              String   @map("user_id")
+  id                  Int          @id @default(autoincrement())
+  threadId            String       @map("thread_id")
+  userId              String       @map("user_id")
   content             String
   response            String?
-  replyModel          String?  @map("reply_model")
-  attachmentFileId    String?  @map("attachment_file_id")
-  attachmentMediaType String?  @map("attachment_media_type")
-  createdAt           DateTime @default(now()) @map("created_at")
-
-  thread              Thread   @relation(fields: [threadId], references: [id])
+  replyModel          String?      @map("reply_model")
+  attachmentFileId    String?      @map("attachment_file_id")
+  attachmentMediaType String?      @map("attachment_media_type")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  thread              Thread       @relation(fields: [threadId], references: [id])
+  userProfile         UserProfile? @relation(fields: [userId], references: [id])
 
   @@map("messages")
 }

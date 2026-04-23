@@ -1,5 +1,6 @@
 const { SLASH_COMMANDS } = require("../constants/commands");
 const { getDb } = require("./db");
+const { getStealthMode, setStealthMode } = require("./userPreference");
 
 const ADMIN_USERNAME = "yanglin1112";
 
@@ -11,43 +12,62 @@ const ADMIN_USERNAME = "yanglin1112";
  */
 const COMMANDS = {
   [SLASH_COMMANDS.ME]: async ({ msg, bot, chatId }) => {
+    const userId = msg.from?.id;
     const username = msg.from?.username;
-    if (!username)
-      return "Unable to look up your profile — you don't have a Telegram username set.";
+    if (!userId) return "Unable to look up your profile.";
 
     const db = getDb();
     if (!db) return "Database not available.";
 
-    const record = await db.userProfile.findUnique({ where: { username } });
+    const record = await db.userProfile.findUnique({ where: { id: String(userId) } });
+    const displayName = username ? `@${username}` : "your account";
     if (!record || !record.notes)
-      return `No profile on record for @${username}.`;
+      return `No profile on record for ${displayName}.`;
 
     await bot.sendMessage(
       chatId,
-      `<b>@${username}'s profile:</b>\n\n${record.notes}`,
+      `<b>${displayName}'s profile:</b>\n\n${record.notes}`,
       { parse_mode: "HTML", reply_to_message_id: msg.message_id },
     );
     return null;
   },
 
   [SLASH_COMMANDS.FORGET]: async ({ msg }) => {
+    const userId = msg.from?.id;
     const username = msg.from?.username;
-    if (!username)
-      return "Unable to find your profile — you don't have a Telegram username set.";
+    if (!userId) return "Unable to find your profile.";
 
     const db = getDb();
     if (!db) return "Database not available.";
 
-    const record = await db.userProfile.findUnique({ where: { username } });
+    const record = await db.userProfile.findUnique({ where: { id: String(userId) } });
+    const displayName = username ? `@${username}` : "your account";
     if (!record || !record.notes)
-      return `No profile on record for @${username} — nothing to clear.`;
+      return `No profile on record for ${displayName} — nothing to clear.`;
 
     await db.userProfile.update({
-      where: { username },
+      where: { id: String(userId) },
       data: { notes: "" },
     });
 
-    return `Profile cleared for @${username}.`;
+    return `Profile cleared for ${displayName}.`;
+  },
+
+  [SLASH_COMMANDS.STEALTH]: async ({ msg }) => {
+    const userId = msg.from?.id;
+    if (!userId) return "Unable to toggle stealth mode.";
+
+    const db = getDb();
+    if (!db) return "Database not available.";
+
+    const parts = msg.text.trim().split(/\s+/);
+    const arg = parts[1]?.toLowerCase();
+    const enable = arg !== "off";
+
+    await setStealthMode(userId, enable, msg.from?.username);
+    return enable
+      ? "Stealth mode ON — your messages will not be stored to the database."
+      : "Stealth mode OFF — your messages will be stored normally.";
   },
 
   [SLASH_COMMANDS.MODEL]: async ({ msg, bot, chatId, llm }) => {

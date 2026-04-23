@@ -1,7 +1,8 @@
 const { getDb } = require("../../libs/db");
 
 // Only register these tools when a database is configured.
-// Profiles are keyed by Telegram username — the only user identity visible to the LLM.
+// Profiles are keyed by Telegram userId (stored as `id`) — stable across username changes.
+// The optional username field is stored for display and cross-user lookup only.
 const enabled = !!process.env.DATABASE_URL;
 
 const getDefinition = {
@@ -48,35 +49,49 @@ const updateDefinition = {
 };
 
 /**
- * @param {object} _args
+ * @param {object} args
  * @param {{ chatId: number, userId: number, username?: string }} context
  */
-async function getProfile({ username: targetUsername } = {}, { username: currentUsername } = {}) {
+async function getProfile({ username: targetUsername } = {}, { userId: currentUserId, username: currentUsername } = {}) {
   const db = getDb();
   if (!db) return "Database not available.";
 
-  const username = targetUsername || currentUsername;
-  if (!username) return "User identity unavailable.";
+  if (targetUsername) {
+    // Cross-user lookup by username
+    const record = await db.userProfile.findUnique({ where: { username: targetUsername } });
+    return record?.notes || `No profile found for @${targetUsername}.`;
+  }
 
-  const record = await db.userProfile.findUnique({ where: { username } });
-  return record?.notes || `No profile found for @${username}.`;
+  if (!currentUserId) return "User identity unavailable.";
+  const record = await db.userProfile.findUnique({ where: { id: String(currentUserId) } });
+  return record?.notes || `No profile found for ${currentUsername ? `@${currentUsername}` : "you"}.`;
 }
 
 /**
- * @param {{ notes: string }} args
+ * @param {{ notes: string, username?: string }} args
  * @param {{ chatId: number, userId: number, username?: string }} context
  */
-async function updateProfile({ notes, username: targetUsername }, { username: currentUsername } = {}) {
+async function updateProfile({ notes, username: targetUsername }, { userId: currentUserId, username: currentUsername } = {}) {
   const db = getDb();
   if (!db) return "Database not available.";
 
-  const username = targetUsername || currentUsername;
-  if (!username) return "User identity unavailable.";
+  if (targetUsername) {
+    // Cross-user update — only works if they already have a profile (no userId available to the LLM)
+    const existing = await db.userProfile.findUnique({ where: { username: targetUsername } });
+    if (!existing) return `No profile found for @${targetUsername} — they need to interact with the bot first.`;
+    await db.userProfile.update({
+      where: { username: targetUsername },
+      data: { notes },
+    });
+    return "Profile updated successfully.";
+  }
 
+  if (!currentUserId) return "User identity unavailable.";
+  const id = String(currentUserId);
   await db.userProfile.upsert({
-    where: { username },
-    update: { notes },
-    create: { username, notes },
+    where: { id },
+    update: { notes, ...(currentUsername ? { username: currentUsername } : {}) },
+    create: { id, username: currentUsername || null, notes },
   });
 
   return "Profile updated successfully.";
