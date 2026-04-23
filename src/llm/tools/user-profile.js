@@ -10,7 +10,8 @@ const getDefinition = {
   description:
     "Retrieve the persistent Markdown profile notes for a user. " +
     "Omit 'username' to fetch the current user's profile. " +
-    "Pass a Telegram username (without @) to look up another user's profile — useful when someone asks about another member of the group.",
+    "Pass a Telegram username (without @) to look up another user's profile — useful when someone asks about another member of the group. " +
+    "Returns three possible states: NOT_REGISTERED (no record exists), EMPTY_PROFILE (registered but no notes saved), or the notes themselves.",
   parameters: {
     type: "object",
     properties: {
@@ -43,6 +44,11 @@ const updateDefinition = {
 /**
  * @param {object} args
  * @param {{ chatId: number, userId: number, username?: string }} context
+ * 
+ * Returns one of three states:
+ * - "NOT_REGISTERED:..." if user has never run /start
+ * - "EMPTY_PROFILE:..." if user is registered but has no notes saved
+ * - The notes themselves if they exist
  */
 async function getProfile({ username: targetUsername } = {}, { userId: currentUserId, username: currentUsername } = {}) {
   const db = getDb();
@@ -51,12 +57,25 @@ async function getProfile({ username: targetUsername } = {}, { userId: currentUs
   if (targetUsername) {
     // Cross-user lookup by username
     const record = await db.userProfile.findUnique({ where: { username: targetUsername } });
-    return record?.notes || `No profile found for @${targetUsername}.`;
+    if (!record) {
+      return `NOT_REGISTERED: @${targetUsername} has not run /start yet.`;
+    }
+    if (!record.notes || record.notes.trim() === "") {
+      return `EMPTY_PROFILE: @${targetUsername} is registered but has no notes saved yet.`;
+    }
+    return record.notes;
   }
 
   if (!currentUserId) return "User identity unavailable.";
   const record = await db.userProfile.findUnique({ where: { id: String(currentUserId) } });
-  return record?.notes || `No profile found for ${currentUsername ? `@${currentUsername}` : "you"}.`;
+  
+  if (!record) {
+    return `NOT_REGISTERED: ${currentUsername ? `@${currentUsername}` : "You"} has not run /start yet.`;
+  }
+  if (!record.notes || record.notes.trim() === "") {
+    return `EMPTY_PROFILE: ${currentUsername ? `@${currentUsername}` : "You"} is registered but has no notes saved yet.`;
+  }
+  return record.notes;
 }
 
 /**
