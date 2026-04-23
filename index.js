@@ -59,7 +59,7 @@ bot.onMessage(async (msg) => {
         userMessage = text;
       } else if (isMentioned) {
         // New @mention — start a fresh thread
-        thread = await Thread.create();
+        thread = await Thread.create({ chatId, userId: msg.from?.id });
 
         if (msg.reply_to_message) {
           // Mentioned inside a reply: replied-to message is the context, mention text is the instruction
@@ -94,7 +94,7 @@ bot.onMessage(async (msg) => {
       const replyToId = msg.reply_to_message?.message_id;
       thread =
         (replyToId ? await Thread.resolve(replyToId) : null) ??
-        (await Thread.create());
+        (await Thread.create({ chatId, userId: msg.from?.id }));
     }
 
     // Strip !info token — the flag is captured; the token itself is not part of the user intent
@@ -107,6 +107,9 @@ bot.onMessage(async (msg) => {
           : userMessage;
     }
 
+    // Capture clean user input before adding the sender prefix for LLM context
+    const processedUserInput = userMessage;
+
     // Prepend sender so the LLM can distinguish between users in the same thread
     const senderName = msg.from?.username || msg.from?.first_name || "user";
     const senderPrefix = `@${senderName}: `;
@@ -114,9 +117,11 @@ bot.onMessage(async (msg) => {
       userMessage = senderPrefix + userMessage;
     }
 
+    let attachment = null;
     if (targetAttachment) {
       const file = await bot.getFile(targetAttachment.file_id);
       const imageBlock = await toImageBlock(token, file);
+      attachment = { fileId: targetAttachment.file_id, mediaType: imageBlock.mediaType };
       userMessage = [
         {
           type: "text",
@@ -126,8 +131,15 @@ bot.onMessage(async (msg) => {
       ];
     }
 
+    // Append to history and persist user message to DB before calling LLM —
+    // guarantees a record even if the LLM fails to respond.
+    await thread.appendMessage(processedUserInput, userMessage, {
+      userId: msg.from?.id,
+      attachment,
+    });
+
     await bot.sendChatAction(chatId, "typing");
-    const reply = await llm.chat(thread, userMessage, {
+    const reply = await llm.chat(thread, {
       chatId,
       userId: msg.from?.id,
       username: msg.from?.username || msg.from?.first_name,
@@ -252,7 +264,7 @@ async function main() {
 
   app.get("/archive/:hash", async (req, res) => {
     try {
-      const thread = await Thread.resolveArchive(req.params.hash);
+      const thread = await Thread.load(req.params.hash);
       if (!thread || thread.history.length === 0) {
         return res.status(404).send("Conversation not found or has expired.");
       }

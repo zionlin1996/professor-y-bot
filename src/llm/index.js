@@ -82,9 +82,8 @@ class LLMClient {
     return `${this.backendName} / ${this.backend.model}`;
   }
 
-  async chat(thread, userMessage, { chatId, userId, username } = {}) {
-    thread.append("user", userMessage);
-
+  // thread.history must already contain the user message (appended via thread.appendMessage()).
+  async chat(thread, { chatId, userId, username } = {}) {
     const tz = process.env.TZ || "UTC";
     const currentTime = `Current time: ${new Date().toLocaleString("en-US", { timeZone: tz, hour12: false, dateStyle: "full", timeStyle: "long" })} (${tz})`;
 
@@ -103,7 +102,7 @@ class LLMClient {
 
     const reply = await this.backend.complete(messages, { chatId, userId, username });
     thread.append("assistant", reply);
-    await thread.save();
+    await thread.save({ replyModel: this.providerInfo() });
 
     return reply;
   }

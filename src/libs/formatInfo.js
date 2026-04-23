@@ -1,5 +1,3 @@
-const getThreadUrl = require("./getThreadUrl");
-
 /**
  * Format the !info metadata block appended to bot replies.
  *
@@ -12,7 +10,7 @@ const getThreadUrl = require("./getThreadUrl");
 const DIVIDER = "─────────────────────";
 
 async function formatInfo(llm, thread, { format = "html" } = {}) {
-  const archiveUrl = await getThreadUrl(thread);
+  const archiveUrl = thread.toPublicUrl();
   const link = format === "html"
     ? `<a href="${archiveUrl}">${archiveUrl}</a>`
     : archiveUrl;

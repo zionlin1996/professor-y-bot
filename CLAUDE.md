@@ -1,6 +1,6 @@
 # Professor-Y
 
-A Telegram bot that proxies group messages to an LLM backend and replies with the generated response. Conversation history lives in Redis (or in-memory when Redis is unavailable). A Prisma database layer is wired up for persistent structured data. Current models: `UserProfile` (free-form Markdown notes per user, read/written via LLM tool calls).
+A Telegram bot that proxies group messages to an LLM backend and replies with the generated response. Conversation history lives in Redis (or in-memory when Redis is unavailable). A Prisma database layer is wired up for persistent structured data. Current models: `UserProfile` (free-form Markdown notes per user, read/written via LLM tool calls), `Thread` (one row per conversation thread), `Message` (one row per user↔LLM exchange, with content, response, model, and optional attachment metadata).
 
 ## How it works
 
@@ -56,7 +56,6 @@ src/
     formatReply.js            ← converts LLM markdown output to Telegram HTML
     attachments.js            ← getLastImage() and toImageBlock() for image support
     preprocess.js             ← bot command dispatcher (entity-based detection, runs before thread routing, returns true if handled)
-    getThreadUrl.js           ← getThreadUrl(thread): generates archive token and returns full EXTERNAL_URL/archive/{hash}
     formatInfo.js             ← formatInfo(llm, thread, {format}): formats !info metadata block; format "html" (default) or "plain"
     exportHtml.js             ← renders thread history as self-contained HTML (used by GET /archive/:hash)
     redis.js                  ← shared Redis client (null when REDIS_PASSWORD unset)
@@ -158,9 +157,9 @@ The `!info` inline action generates a shareable archive link embedded in the bot
 
 - **Trigger**: include `!info` anywhere in a message that the bot will process (group: `@bot !info ...` or in a thread reply; PM: `!info ...`)
 - **Output**: bot appends a `<code>` block to the bottom of its reply with model name, thread ID, and archive URL
-- **URL format**: `EXTERNAL_URL/archive/{hash}` — the hash is a 128-bit cryptographically random token (`crypto.randomBytes(16)`); security model is "secret link" (the hash is the only credential — no login required)
-- **Rendering**: `GET /archive/:hash` resolves the hash to a `threadId` via Redis, loads the thread, and renders `exportHtml` server-side on every request (always reflects current thread state)
-- **Expiry**: archive tokens use the same 7-day rolling TTL as all thread keys; expired links return 404
+- **URL format**: `EXTERNAL_URL/archive/{threadId}` — the thread ID is itself a 128-bit cryptographically random hex string; security model is "secret link" (the ID is the only credential — no login required)
+- **Rendering**: `GET /archive/:hash` calls `Thread.load(hash)` directly (no separate Redis mapping needed), renders `exportHtml` server-side on every request (always reflects current thread state)
+- **Expiry**: thread history is now persistent in the DB; Redis TTL only affects in-memory history recency, not archive availability
 - **Dev mode**: the Express server does not call `app.listen` in development (polling) mode, so archive links are only accessible in production. The `!info` token still generates a valid URL, but it will not resolve locally
 
 ## Telegram setup notes
@@ -205,11 +204,13 @@ Each bot interaction in a group starts a **new thread** with its own isolated co
 
 Thread management lives in `src/llm/Thread.js` and is model-agnostic:
 
-- `Thread.create()` — creates a new thread (UUID), initialises Redis entry, returns instance
-- `Thread.resolve(messageId)` — looks up which thread owns a Telegram message ID; checks `Thread.messageMap` (static in-memory) first, then Redis; returns a `Thread` instance or `null`
+- `Thread.create({ chatId, userId, stealth })` — creates a new thread (32-char hex ID), initialises Redis entry, persists a `Thread` DB row (skipped when `stealth=true` or DB unavailable); returns instance
+- `Thread.resolve(messageId, { stealth })` — looks up which thread owns a Telegram message ID; checks `Thread.messageMap` (static in-memory) first, then Redis; returns a `Thread` instance or `null`; forwards `stealth` to the loaded instance
 - `thread.append(role, content)` — adds a message to history, trims to 20 entries
-- `thread.save()` — persists history to Redis with image blocks stripped (base64 replaced with `"[image]"` to keep payloads small)
+- `thread.save({ replyModel, attachment })` — persists to all active storage layers: Redis always (history with images stripped); DB unless stealth mode (extracts last user↔assistant pair from history; fire-and-forget; no-op when DB unavailable); `attachment` is `{ fileId, mediaType }` or `null`
 - `thread.trackMessage(messageId)` — registers a Telegram message ID in both `Thread.messageMap` and Redis (`msg:{id}` → threadId), enabling bi-directional lookup
+- `thread.toPublicUrl()` — returns the public archive URL (`EXTERNAL_URL/archive/{thread.id}`); thread ID doubles as the secret link token
+- `thread.stealth` — boolean flag; when `true`, all DB writes are suppressed (Redis-only); set at creation time, forwarded through `load()`/`resolve()`; policy (which chats are stealth) is determined by the caller
 - `Thread.messageMap` — static `Map<messageId, threadId>` shared across all instances; warm-path cache to avoid a Redis round-trip on lookups
 - All Redis keys use a rolling 7-day TTL (managed by `src/libs/store.js`); without Redis, all state is in-memory and cleared on restart
 - In private chats, each top-level message starts a new thread; replying to any tracked message continues that thread — same model as groups

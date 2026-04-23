@@ -20,3 +20,29 @@ model UserProfile {
 
   @@map("user_profiles")
 }
+
+model Thread {
+  id        String    @id
+  chatId    String    @map("chat_id")
+  userId    String    @map("user_id")
+  messages  Message[]
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("threads")
+}
+
+model Message {
+  id                  Int      @id @default(autoincrement())
+  threadId            String   @map("thread_id")
+  userId              String   @map("user_id")
+  content             String
+  response            String?
+  replyModel          String?  @map("reply_model")
+  attachmentFileId    String?  @map("attachment_file_id")
+  attachmentMediaType String?  @map("attachment_media_type")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  thread              Thread   @relation(fields: [threadId], references: [id])
+
+  @@map("messages")
+}
