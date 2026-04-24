@@ -13,7 +13,10 @@ function parseUserMessage(content) {
   const text =
     typeof content === "string"
       ? content
-      : content.filter?.((b) => b.type === "text").map((b) => b.text).join(" ") || "[image]";
+      : content
+          .filter?.((b) => b.type === "text")
+          .map((b) => b.text)
+          .join(" ") || "[image]";
   const match = text.match(/^@(\S+): ([\s\S]*)$/);
   return match
     ? { sender: `@${match[1]}`, body: match[2] }
@@ -88,6 +91,7 @@ function exportHtml(history, botName) {
       background: #fff;
       border-radius: 7.5px 7.5px 7.5px 0;
       box-shadow: 0 1px 1px rgba(0,0,0,.08);
+      width: 100%;
     }
     .bubble p { margin-bottom: 6px; }
     .bubble p:last-child { margin-bottom: 0; }
