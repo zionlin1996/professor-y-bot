@@ -9,7 +9,11 @@ const exportHtml = require("./src/libs/exportHtml");
 const { toImageBlock } = require("./src/libs/attachments");
 const formatInfo = require("./src/libs/formatInfo");
 const { getDb } = require("./src/libs/db");
-const { INLINE_COMMANDS, BOT_COMMANDS, SLASH_COMMANDS } = require("./src/constants/commands");
+const {
+  INLINE_COMMANDS,
+  BOT_COMMANDS,
+  SLASH_COMMANDS,
+} = require("./src/constants/commands");
 const startSubscriber = require("./src/libs/subscriber");
 const { ThreadService } = require("./src/services/ThreadService");
 const BotControlService = require("./src/services/BotControlService");
@@ -43,8 +47,7 @@ bot.onMessage(async (message) => {
     let userMessage = result.userMessage;
     let attachment = null;
     if (message.targetAttachment) {
-      const file = await bot.getFile(message.targetAttachment.file_id);
-      const imageBlock = await toImageBlock(token, file);
+      const imageBlock = await toImageBlock(bot, message.targetAttachment);
       attachment = {
         fileId: message.targetAttachment.file_id,
         mediaType: imageBlock.mediaType,
@@ -85,9 +88,7 @@ bot.onMessage(async (message) => {
         },
       );
     } catch {
-      const info = showInfo
-        ? formatInfo(llm, thread, { format: "plain" })
-        : "";
+      const info = showInfo ? formatInfo(llm, thread, { format: "plain" }) : "";
       sentMsg = await bot.sendMessage(
         message.chatId,
         reply + info,
