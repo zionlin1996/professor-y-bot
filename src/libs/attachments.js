@@ -1,5 +1,4 @@
 const { fetch } = require("undici");
-
 /**
  * Returns the best image attachment from a Telegram message, or null if none.
  * For compressed photos, Telegram sends an array of sizes — we take the last

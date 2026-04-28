@@ -33,7 +33,7 @@ The bot activates in group chats whenever it is **@mentioned** — either in a r
 ```
 index.js                      ← thin bootstrap: wires services, registers bot event handlers
 src/
-  bot.js                      ← EnhancedBot: wraps every raw message in IncomingMessage DTO, dispatches commands via onCommand registry, forwards the rest to onMessage handler
+  bot.js                      ← EnhancedBot: wraps every raw message in IncomingMessage DTO, dispatches commands via onCommand registry, forwards the rest to onMessage handler; passes `request: { family: 4 }` to force IPv4-only DNS for all Telegram API calls
   setup.js                    ← dev (polling) vs production (webhook) setup
   constants/
     commands.js               ← SLASH_COMMANDS, INLINE_COMMANDS, and BOT_COMMANDS (Telegram registration list)
