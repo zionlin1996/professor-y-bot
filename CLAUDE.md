@@ -33,7 +33,7 @@ The bot activates in group chats whenever it is **@mentioned** — either in a r
 ```
 index.js                      ← thin bootstrap: wires services, registers bot event handlers
 src/
-  bot.js                      ← EnhancedBot: wraps every raw message in IncomingMessage DTO, dispatches commands via onCommand registry, forwards the rest to onMessage handler
+  bot.js                      ← EnhancedBot: wraps every raw message in IncomingMessage DTO, dispatches commands via onCommand registry, forwards the rest to onMessage handler; passes `request: { family: 4 }` to force IPv4-only DNS for all Telegram API calls
   setup.js                    ← dev (polling) vs production (webhook) setup
   constants/
     commands.js               ← SLASH_COMMANDS, INLINE_COMMANDS, and BOT_COMMANDS (Telegram registration list)
@@ -417,9 +417,9 @@ Images are plumbed from Telegram through to the LLM via a neutral internal forma
 
 1. `getLastImage(msg)` (`src/libs/attachments.js`) — extracts the largest photo size, image document, or sticker thumbnail from a Telegram message
 2. `targetAttachment = msgAttachment || replyAttachment` — current message photo takes priority over the replied-to message photo
-3. `toImageBlock(bot, attachment)` (`src/libs/attachments.js`) — streams the file via `bot.getFileStream(file_id)`, base64-encodes it, and returns a neutral block: `{ type: "image", mediaType, data }`. `mediaType` is sniffed from the buffer's magic bytes (JPEG / PNG / GIF / WEBP) so sticker thumbnails and untyped documents are labelled correctly; defaults to `image/jpeg`. Streaming via `node-telegram-bot-api` avoids undici's IPv6 Happy Eyeballs path, which has been observed to hang on some hosts.
-4. `userMessage` is built as a content array: `[{ type: "text", text }, imageBlock]`
-5. Each backend's `normalizeMessages()` translates the neutral block to its API format before the call
+3. `toImageBlock(file)` (`src/libs/attachments.js`) — calls the Telegram API directly (no SDK) to resolve `file_id` → `file_path`, downloads the file, base64-encodes it, and returns a neutral block: `{ type: "image", mediaType, data }`; reads `TELEGRAM_BOT_TOKEN` from env
+5. `userMessage` is built as a content array: `[{ type: "text", text }, imageBlock]`
+6. Each backend's `normalizeMessages()` translates the neutral block to its API format before the call
 
 **Neutral image block format** (stored in thread history):
 

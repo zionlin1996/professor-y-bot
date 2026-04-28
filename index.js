@@ -1,4 +1,15 @@
 require("dotenv").config();
+const { Agent, setGlobalDispatcher } = require("undici");
+
+// Apply globally to all undici requests (including fetch)
+setGlobalDispatcher(
+  new Agent({
+    connect: {
+      family: 4, // Forces IPv4
+      keepAlive: true,
+    },
+  }),
+);
 
 const EnhancedBot = require("./src/bot");
 const setup = require("./src/setup");
@@ -47,7 +58,7 @@ bot.onMessage(async (message) => {
     let userMessage = result.userMessage;
     let attachment = null;
     if (message.targetAttachment) {
-      const imageBlock = await toImageBlock(bot, message.targetAttachment);
+      const imageBlock = await toImageBlock(message.targetAttachment);
       attachment = {
         fileId: message.targetAttachment.file_id,
         mediaType: imageBlock.mediaType,

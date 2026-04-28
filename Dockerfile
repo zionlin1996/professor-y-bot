@@ -38,7 +38,6 @@ ENV GITHUB_TOKEN=${GITHUB_TOKEN}
 ENV GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
 ENV NODE_ENV=production
 ENV PORT=80
-
 ENV TZ=Asia/Taipei
 
 RUN apk add --no-cache tzdata && \
