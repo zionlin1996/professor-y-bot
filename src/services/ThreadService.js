@@ -95,7 +95,7 @@ class ThreadService {
         data: {
           id,
           chatId: String(chatId ?? ""),
-          userId: String(userId ?? ""),
+          userId: userId ? String(userId) : null,
         },
       });
     }
@@ -186,7 +186,7 @@ class ThreadService {
     const record = await this._db.message.create({
       data: {
         threadId: thread.id,
-        userId: String(userId),
+        userId: userId ? String(userId) : null,
         content: String(cleanContent),
         attachmentFileId: attachment?.fileId ?? null,
         attachmentMediaType: attachment?.mediaType ?? null,

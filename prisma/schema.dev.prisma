@@ -29,7 +29,7 @@ model UserProfile {
 model Thread {
   id          String       @id
   chatId      String       @map("chat_id")
-  userId      String       @map("user_id")
+  userId      String?      @map("user_id")
   messages    Message[]
   userProfile UserProfile? @relation(fields: [userId], references: [id])
   createdAt   DateTime     @default(now()) @map("created_at")
@@ -40,7 +40,7 @@ model Thread {
 model Message {
   id                  Int          @id @default(autoincrement())
   threadId            String       @map("thread_id")
-  userId              String       @map("user_id")
+  userId              String?      @map("user_id")
   content             String
   response            String?
   replyModel          String?      @map("reply_model")
