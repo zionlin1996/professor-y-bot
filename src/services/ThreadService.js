@@ -91,11 +91,27 @@ class ThreadService {
     const id = randomBytes(16).toString("hex");
     await this._store.set(threadKey(id), "[]");
     if (!stealth && this._db) {
+      // Validate userId exists in userProfile before inserting to respect FK constraint
+      let finalUserId = null;
+      if (userId) {
+        try {
+          const profile = await this._db.userProfile.findUnique({
+            where: { id: String(userId) },
+          });
+          if (profile) {
+            finalUserId = String(userId);
+          }
+        } catch {
+          // If query fails, fall back to null
+          finalUserId = null;
+        }
+      }
+
       await this._db.thread.create({
         data: {
           id,
           chatId: String(chatId ?? ""),
-          userId: userId ? String(userId) : null,
+          userId: finalUserId,
         },
       });
     }
