@@ -1,3 +1,4 @@
+const { fetch } = require("undici");
 // @todo: make SCHEDULER_URL configurable via env var
 const SCHEDULER_URL = "http://srv-captain--scheduler";
 

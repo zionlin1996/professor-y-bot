@@ -1,3 +1,4 @@
+const { fetch } = require("undici");
 const PLACES_BASE = "https://maps.googleapis.com/maps/api/place/textsearch/json";
 const GEOCODE_BASE = "https://maps.googleapis.com/maps/api/geocode/json";
 const DEFAULT_LIMIT = 5;

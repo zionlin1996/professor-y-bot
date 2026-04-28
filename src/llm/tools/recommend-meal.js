@@ -1,3 +1,4 @@
+const { fetch } = require("undici");
 const { formatPlaceResult, PLACES_BASE } = require("./search-map");
 
 const definition = {

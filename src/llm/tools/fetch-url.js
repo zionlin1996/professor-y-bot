@@ -1,3 +1,4 @@
+const { fetch } = require("undici");
 const MAX_CONTENT_LENGTH = 15000;
 const JINA_BASE = "https://r.jina.ai";
 
