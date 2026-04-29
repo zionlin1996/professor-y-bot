@@ -11,11 +11,12 @@ class IncomingMessage {
 
     this.id = rawMsg.message_id;
     this.chatId = rawMsg.chat.id;
-    this.userId = rawMsg.from?.id;
+    this.userId = String(rawMsg.from?.id) || "";
     this.username = rawMsg.from?.username;
     this.from = rawMsg.from;
     this.isGroup =
       rawMsg.chat.type === "group" || rawMsg.chat.type === "supergroup";
+    this.isPrivate = !this.isGroup;
     this.isForwarded = !!rawMsg.forward_origin;
     this.replyToId = rawMsg.reply_to_message?.message_id ?? null;
     this.replyToMessage = rawMsg.reply_to_message ?? null;
@@ -103,12 +104,12 @@ class IncomingMessage {
 
   _parseCommand() {
     const entity = this._raw.entities?.find(
-      (e) => e.type === "bot_command" && e.offset === 0,
+      (e) => e.type === "bot_command" && e.offset === 0
     );
     if (!entity) return null;
     const full = (this._raw.text || "").slice(
       entity.offset,
-      entity.offset + entity.length,
+      entity.offset + entity.length
     );
     return full.split("@")[0];
   }

@@ -7,15 +7,17 @@ const { SLASH_COMMANDS } = require("../constants/commands");
  * Replaces src/libs/preprocess.js and the callback_query handler in index.js.
  *
  * Dependencies injected via constructor:
- *   bot  — EnhancedBot instance
- *   llm  — LLMClient instance
+ *   llm  — LLMService instance
  *   db   — Prisma client or null
  */
 class BotControlService {
-  constructor({ bot, llm, db } = {}) {
-    this._bot = bot;
+  constructor({ llm, db } = {}) {
     this._llm = llm;
     this._db = db;
+  }
+
+  use(bot) {
+    this.bot = bot;
   }
 
   // ---------------------------------------------------------------------------
@@ -37,7 +39,7 @@ class BotControlService {
 
     const reply = await handler(incoming);
     if (reply != null) {
-      await this._bot.sendMessage(incoming.chatId, reply, {
+      await this.bot.sendMessage(incoming.chatId, reply, {
         reply_to_message_id: incoming.id,
       });
     }
@@ -59,7 +61,7 @@ class BotControlService {
     if (data.startsWith("up_e:") || data.startsWith("up_i:")) {
       try {
         if (!(await this._isAdmin(from?.id))) {
-          await this._bot.answerCallbackQuery(query.id);
+          await this.bot.answerCallbackQuery(query.id);
           return;
         }
         const actorName = from?.username
@@ -73,32 +75,32 @@ class BotControlService {
               data: { permissionLevel: 2 },
             });
           }
-          await this._bot.editMessageText(
+          await this.bot.editMessageText(
             `${message.text}\n\n✓ <b>Enabled</b> by ${actorName}`,
             {
               chat_id: message.chat.id,
               message_id: message.message_id,
               parse_mode: "HTML",
-            },
+            }
           );
-          await this._bot.sendMessage(
+          await this.bot.sendMessage(
             targetId,
-            "Your access has been approved — you can now chat with me in private.",
+            "Your access has been approved — you can now chat with me in private."
           );
         } else {
-          await this._bot.editMessageText(
+          await this.bot.editMessageText(
             `${message.text}\n\n— <b>Ignored</b> by ${actorName}`,
             {
               chat_id: message.chat.id,
               message_id: message.message_id,
               parse_mode: "HTML",
-            },
+            }
           );
         }
-        await this._bot.answerCallbackQuery(query.id);
+        await this.bot.answerCallbackQuery(query.id);
       } catch (err) {
         console.error("[BotControlService] promotion callback error:", err);
-        await this._bot.answerCallbackQuery(query.id, {
+        await this.bot.answerCallbackQuery(query.id, {
           text: "Something went wrong",
         });
       }
@@ -106,7 +108,7 @@ class BotControlService {
     }
 
     if (!(await this._isAdmin(from?.id))) {
-      await this._bot.answerCallbackQuery(query.id);
+      await this.bot.answerCallbackQuery(query.id);
       return;
     }
 
@@ -121,30 +123,30 @@ class BotControlService {
           { text: m, callback_data: `ms:${backendName}:${i}` },
         ]);
         rows.push([{ text: "← Back", callback_data: "mb" }]);
-        await this._bot.editMessageText(
+        await this.bot.editMessageText(
           `<b>${backendName}</b> — select a model:`,
           {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: "HTML",
             reply_markup: { inline_keyboard: rows },
-          },
+          }
         );
-        await this._bot.answerCallbackQuery(query.id);
+        await this.bot.answerCallbackQuery(query.id);
       } else if (data.startsWith("ms:")) {
         const [, backendName, indexStr] = data.split(":");
         const modelName = this._llm.modelAt(backendName, parseInt(indexStr));
         if (modelName) {
           await this._llm.setActiveModel(backendName, modelName);
-          await this._bot.editMessageText(
+          await this.bot.editMessageText(
             `✓ Switched to <b>${backendName} / ${modelName}</b>`,
-            { chat_id: chatId, message_id: messageId, parse_mode: "HTML" },
+            { chat_id: chatId, message_id: messageId, parse_mode: "HTML" }
           );
-          await this._bot.answerCallbackQuery(query.id, {
+          await this.bot.answerCallbackQuery(query.id, {
             text: `Now using ${modelName}`,
           });
         } else {
-          await this._bot.answerCallbackQuery(query.id, {
+          await this.bot.answerCallbackQuery(query.id, {
             text: "Model not found",
           });
         }
@@ -156,23 +158,23 @@ class BotControlService {
             groups.slice(i, i + 2).map((name) => ({
               text: name.charAt(0).toUpperCase() + name.slice(1),
               callback_data: `mp:${name}`,
-            })),
+            }))
           );
         }
-        await this._bot.editMessageText(
+        await this.bot.editMessageText(
           `Current: <b>${this._llm.providerInfo()}</b>\n\nChoose a provider:`,
           {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: "HTML",
             reply_markup: { inline_keyboard: rows },
-          },
+          }
         );
-        await this._bot.answerCallbackQuery(query.id);
+        await this.bot.answerCallbackQuery(query.id);
       }
     } catch (err) {
       console.error("[BotControlService] callback error:", err);
-      await this._bot.answerCallbackQuery(query.id, {
+      await this.bot.answerCallbackQuery(query.id, {
         text: "Something went wrong",
       });
     }
@@ -205,7 +207,7 @@ class BotControlService {
   // ---------------------------------------------------------------------------
 
   _commands() {
-    const bot = this._bot;
+    const bot = this.bot;
     const llm = this._llm;
     const db = this._db;
 
@@ -254,7 +256,7 @@ class BotControlService {
                     ],
                   ],
                 },
-              },
+              }
             );
           }
         }
@@ -276,7 +278,7 @@ class BotControlService {
         await bot.sendMessage(
           chatId,
           `<b>${displayName}'s profile:</b>\n\n${record.notes}`,
-          { parse_mode: "HTML", reply_to_message_id: id },
+          { parse_mode: "HTML", reply_to_message_id: id }
         );
         return null;
       },
@@ -329,7 +331,7 @@ class BotControlService {
         if (!groups.length) {
           await bot.sendMessage(
             chatId,
-            "No models available — check your API keys.",
+            "No models available — check your API keys."
           );
           return null;
         }
@@ -340,13 +342,13 @@ class BotControlService {
             groups.slice(i, i + 2).map((g) => ({
               text: g.backend.charAt(0).toUpperCase() + g.backend.slice(1),
               callback_data: `mp:${g.backend}`,
-            })),
+            }))
           );
         }
         await bot.sendMessage(
           chatId,
           `Current: <b>${llm.providerInfo()}</b>\n\nChoose a provider:`,
-          { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
+          { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } }
         );
         return null;
       },

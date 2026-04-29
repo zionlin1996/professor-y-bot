@@ -31,16 +31,17 @@ The bot activates in group chats whenever it is **@mentioned** — either in a r
 ## Project structure
 
 ```
-index.js                      ← thin bootstrap: wires services, registers bot event handlers
+index.js                      ← thin bootstrap: resolves deps from container, registers bot event handlers
 src/
-  bot.js                      ← EnhancedBot: wraps every raw message in IncomingMessage DTO, dispatches commands via onCommand registry, forwards the rest to onMessage handler; passes `request: { family: 4 }` to force IPv4-only DNS for all Telegram API calls
+  container.js                ← DI container: registers all singletons (bot, llm, store, db, botControl) and the per-request threadService factory; use container.get(name) to resolve
+  bot.js                      ← EnhancedBot: wraps every raw message in IncomingMessage DTO, dispatches commands via onCommand registry, forwards the rest to onMessage handler
   setup.js                    ← dev (polling) vs production (webhook) setup
   constants/
     commands.js               ← SLASH_COMMANDS, INLINE_COMMANDS, and BOT_COMMANDS (Telegram registration list)
   dto/
     IncomingMessage.js        ← pure DTO: parses raw Telegram msg synchronously, exposes rawContent/isValid/isCommand/inlineCommand() — no async, no DB
   services/
-    ThreadService.js          ← per-request service: thread create/load/resolve/resolveOrCreate, appendMessage, save, trackMessages
+    ThreadService.js          ← per-request service: thread create/load/resolve/resolveOrCreate(incoming), appendMessage, save, trackMessages; constructor takes { store, db } only — incoming is passed to resolveOrCreate()
     BotControlService.js      ← instantiatable service: slash command dispatch + callback_query handling
     LLMService.js             ← instantiatable service: backend routing, chat orchestration
   llm/
@@ -245,12 +246,12 @@ The default system prompt is assembled in `src/services/LLMService.js` by loadin
 
 **Actions** are the mechanisms by which users control bot behaviour outside of normal LLM conversation. There are four types:
 
-| Type               | Trigger           | Scope      | Description                                                                                                                                                                                                |
-| ------------------ | ----------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Type               | Trigger           | Scope      | Description                                                                                                                                                                                                                                     |
+| ------------------ | ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Command action** | `/command` prefix | Group & PM | Standard Telegram bot commands detected via `msg.entities` in `IncomingMessage._parseCommand()`; dispatched by `EnhancedBot` before thread/mention routing. In groups, `/command@botname` form is required to avoid collisions with other bots. |
-| **Inline action**  | `!` prefix        | Group & PM | Tokens embedded anywhere in a message that trigger specific behaviour. Detected and processed in `index.js`.                                                                                               |
-| **Menu action**    | Reply keyboard    | PM only    | Interactions driven by Telegram reply keyboards (the keyboard that replaces the text input). Must never be shown or accepted in group chats.                                                               |
-| **Choice action**  | Inline keyboard   | PM only    | Interactions driven by Telegram inline keyboards (buttons attached to a message, handled via `callback_query`). Must never be shown or accepted in group chats.                                            |
+| **Inline action**  | `!` prefix        | Group & PM | Tokens embedded anywhere in a message that trigger specific behaviour. Detected and processed in `index.js`.                                                                                                                                    |
+| **Menu action**    | Reply keyboard    | PM only    | Interactions driven by Telegram reply keyboards (the keyboard that replaces the text input). Must never be shown or accepted in group chats.                                                                                                    |
+| **Choice action**  | Inline keyboard   | PM only    | Interactions driven by Telegram inline keyboards (buttons attached to a message, handled via `callback_query`). Must never be shown or accepted in group chats.                                                                                 |
 
 **Command actions (all PM only):**
 
@@ -418,8 +419,8 @@ Images are plumbed from Telegram through to the LLM via a neutral internal forma
 1. `getLastImage(msg)` (`src/libs/attachments.js`) — extracts the largest photo size, image document, or sticker thumbnail from a Telegram message
 2. `targetAttachment = msgAttachment || replyAttachment` — current message photo takes priority over the replied-to message photo
 3. `toImageBlock(file)` (`src/libs/attachments.js`) — calls the Telegram API directly (no SDK) to resolve `file_id` → `file_path`, downloads the file, base64-encodes it, and returns a neutral block: `{ type: "image", mediaType, data }`; reads `TELEGRAM_BOT_TOKEN` from env
-5. `userMessage` is built as a content array: `[{ type: "text", text }, imageBlock]`
-6. Each backend's `normalizeMessages()` translates the neutral block to its API format before the call
+4. `userMessage` is built as a content array: `[{ type: "text", text }, imageBlock]`
+5. Each backend's `normalizeMessages()` translates the neutral block to its API format before the call
 
 **Neutral image block format** (stored in thread history):
 

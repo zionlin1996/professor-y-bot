@@ -4,12 +4,14 @@ const IncomingMessage = require("./dto/IncomingMessage");
 class EnhancedBot extends TelegramBot {
   handleMessage = () => {};
   callbackHandlers = {};
+  container = null;
 
-  constructor(token, options) {
+  constructor(token, options, container) {
     super(token, {
       polling: options.mode !== "production",
       request: { family: 4 },
     });
+    this.container = container;
 
     if (!token) {
       throw new Error("Telegram bot token is required");
@@ -29,10 +31,10 @@ class EnhancedBot extends TelegramBot {
         const command = incoming.command;
         const callback = this.callbackHandlers[command];
         if (callback) {
-          return callback(incoming);
+          return callback(incoming, this.container);
         }
       }
-      return this.handleMessage(incoming);
+      return this.handleMessage(incoming, this.container);
     });
   }
 

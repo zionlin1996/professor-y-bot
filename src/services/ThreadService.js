@@ -1,6 +1,5 @@
 const { randomBytes } = require("crypto");
 
-const MAX_HISTORY = 20;
 const threadKey = (id) => `thread:${id}`;
 const msgKey = (id) => `msg:${id}`;
 
@@ -31,9 +30,6 @@ class Thread {
   /** Append a message to history, trimming oldest entries when over the cap. */
   append(role, content) {
     this.history.push({ role, content });
-    if (this.history.length > MAX_HISTORY) {
-      this.history.splice(0, this.history.length - MAX_HISTORY);
-    }
   }
 
   /** Public archive URL for this thread. */
@@ -54,33 +50,13 @@ class Thread {
  *   db     — Prisma client or null
  */
 class ThreadService {
-  constructor(incoming, { store, db } = {}) {
-    this._incoming = incoming;
+  constructor({ store, db, user } = {}) {
     this._store = store;
     this._db = db;
+    this._user = user;
     this._pendingMessageId = null;
     /** The resolved/created Thread for this request. Set by resolveOrCreate(). */
-    this.thread = null;
-  }
-
-  // ---------------------------------------------------------------------------
-  // User info (DB fetch owned here, not by the DTO)
-  // ---------------------------------------------------------------------------
-
-  async _fetchUserInfo(userId) {
-    const defaults = { permissionLevel: null, stealth: false };
-    if (!this._db || !userId) return defaults;
-    try {
-      const profile = await this._db.userProfile.findUnique({
-        where: { id: String(userId) },
-      });
-      return {
-        permissionLevel: profile?.permissionLevel ?? null,
-        stealth: profile?.stealthMode ?? false,
-      };
-    } catch {
-      return defaults;
-    }
+    this.current = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -133,79 +109,44 @@ class ThreadService {
    * Resolve an existing thread or create a new one based on this._incoming.
    *
    * Returns:
-   *   { userMessage }    — proceed; thread is set on this.thread
-   *   null               — group message with no @mention and no tracked reply; ignore
-   *   { reject, reason } — private chat permission denied; send reason and stop
+   *   Thread             — the resolved or created thread
    */
-  async resolveOrCreate() {
-    const incoming = this._incoming;
-    const { stealth, permissionLevel } = await this._fetchUserInfo(incoming.userId);
+  async resolveOrCreate(incoming) {
+    const { stealth } = this._user.current;
 
-    let thread;
-
-    if (incoming.isGroup) {
-      if (incoming.replyToId) {
-        thread = await this.resolve(incoming.replyToId, { stealth });
-        if (thread) {
-          this.thread = thread;
-          return { userMessage: incoming.text };
-        }
-      }
-      if (incoming.isMention) {
-        thread = await this.create({
-          chatId: incoming.chatId,
-          userId: incoming.userId,
-          stealth,
-        });
-        this.thread = thread;
-        return { userMessage: incoming.quotedPrompt };
-      }
-      return null;
-    }
-
-    // Private chat
-    if (permissionLevel === null || permissionLevel === 1) {
-      return { reject: true, reason: "Sorry, private chat access is restricted." };
-    }
     if (incoming.replyToId) {
-      thread = await this.resolve(incoming.replyToId, { stealth });
-    }
-    if (!thread) {
-      thread = await this.create({
+      this.current = await this.resolve(incoming.replyToId, { stealth });
+    } else if ((incoming.isGroup && incoming.isMention) || incoming.isPrivate) {
+      this.current = await this.create({
         chatId: incoming.chatId,
         userId: incoming.userId,
         stealth,
       });
     }
-    this.thread = thread;
-    return { userMessage: incoming.text };
+
+    return this.current;
   }
 
   // ---------------------------------------------------------------------------
-  // Message operations — all use this.thread set by resolveOrCreate()
+  // Message operations — all use this.current set by resolveOrCreate()
   // ---------------------------------------------------------------------------
 
   /**
    * Append the user message to history and persist a DB record before calling the LLM.
-   * cleanContent: raw user input (no sender prefix, no inline command tokens).
-   * prefixedContent: the LLM-context version ("@name: ...") stored in history.
+   * Expects a Prompt DTO: text (DB row), content (history / LLM), userId, attachment.
    */
-  async appendMessage(
-    cleanContent,
-    prefixedContent,
-    { userId = "", attachment = null } = {},
-  ) {
-    const thread = this.thread;
-    thread.append("user", prefixedContent);
+  async appendPrompt(prompt) {
+    const thread = this.current;
+    thread.append("user", prompt.content);
 
     if (thread.stealth || !this._db) return;
     const record = await this._db.message.create({
       data: {
         threadId: thread.id,
-        userId: userId ? String(userId) : null,
-        content: String(cleanContent),
-        attachmentFileId: attachment?.fileId ?? null,
-        attachmentMediaType: attachment?.mediaType ?? null,
+        userId: prompt.userId ? String(prompt.userId) : null,
+        content: String(prompt.text),
+        attachmentFileId: prompt.attachment?.fileId ?? null,
+        attachmentMediaType: prompt.attachment?.mediaType ?? null,
       },
     });
     this._pendingMessageId = record.id;
@@ -216,10 +157,10 @@ class ThreadService {
    * with the LLM response.
    */
   async save({ replyModel = "" } = {}) {
-    const thread = this.thread;
+    const thread = this.current;
     await this._store.set(
       threadKey(thread.id),
-      JSON.stringify(stripImages(thread.history)),
+      JSON.stringify(stripImages(thread.history))
     );
 
     if (thread.stealth || !this._db || !this._pendingMessageId) return;
@@ -240,7 +181,7 @@ class ThreadService {
 
   /** Map a Telegram message ID to this thread in Redis for future lookups. */
   async trackMessage(messageId) {
-    await this._store.set(msgKey(messageId), this.thread.id);
+    await this._store.set(msgKey(messageId), this.current.id);
   }
 
   /** Track multiple message IDs in parallel. */
@@ -249,4 +190,4 @@ class ThreadService {
   }
 }
 
-module.exports = { ThreadService, Thread };
+module.exports = ThreadService;
