@@ -82,8 +82,7 @@ bot.onMessage(async (message, services) => {
       sentMsg = await bot.sendMessage(chatId, reply + info, replyOptions);
     }
 
-    await threadService.save({ replyModel: llm.providerInfo() });
-    await threadService.trackMessages(message.id, sentMsg.message_id);
+    await threadService.updateReply(sentMsg.message_id, { replyModel: llm.providerInfo() });
   } catch (error) {
     console.error("Error handling message:", error);
     await bot.sendMessage(

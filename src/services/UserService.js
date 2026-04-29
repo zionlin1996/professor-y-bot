@@ -41,7 +41,8 @@ class UserService {
    * both the clean DB text and the LLM-ready content with sender prefix.
    */
   async createPrompt() {
-    if (!this.incoming) throw new Error("Call loadFrom() before createPrompt()");
+    if (!this.incoming)
+      throw new Error("Call loadFrom() before createPrompt()");
     const incoming = this.incoming;
 
     // text: stored in DB — mention stripped, no sender prefix
@@ -78,6 +79,7 @@ class UserService {
       attachment,
       userId: incoming.userId,
       username: incoming.username,
+      messageId: String(incoming.id),
     });
   }
 }

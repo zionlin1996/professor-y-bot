@@ -41,7 +41,7 @@ src/
   dto/
     IncomingMessage.js        ← pure DTO: parses raw Telegram msg synchronously, exposes rawContent/isValid/isCommand/inlineCommand() — no async, no DB
   services/
-    ThreadService.js          ← per-request service: thread create/load/resolve/resolveOrCreate(incoming), appendMessage, save, trackMessages; constructor takes { store, db } only — incoming is passed to resolveOrCreate()
+    ThreadService.js          ← per-request service: thread create/load/resolve/resolveOrCreate(incoming), appendPrompt, updateReply; constructor takes { store, db, user } — incoming is passed to resolveOrCreate()
     BotControlService.js      ← instantiatable service: slash command dispatch + callback_query handling
     LLMService.js             ← instantiatable service: backend routing, chat orchestration
   llm/
@@ -210,15 +210,15 @@ Each bot interaction in a group starts a **new thread** with its own isolated co
 
 Thread management lives in `src/services/ThreadService.js`. A new `ThreadService` instance is created per incoming message with an `IncomingMessage` DTO:
 
-- `new ThreadService(incoming, { store, db })` — per-request instance; `incoming` provides routing context; `store`/`db` are injected for testability; owns the DB fetch for user info via `_fetchUserInfo(userId)`
-- `threadService.resolveOrCreate()` — full routing logic: group (resolve by reply → create on @mention → null) or private (permission gate → resolve or create); calls `_fetchUserInfo(userId)` for `stealth`/`permissionLevel`; sets `threadService.thread`; returns `{ userMessage }` on success, `null` to ignore, or `{ reject, reason }` to deny
-- `threadService.appendMessage(cleanContent, prefixedContent, { userId, attachment })` — appends user message to history and writes a DB record before the LLM call
-- `threadService.save({ replyModel })` — persists history to Redis (images stripped) and updates the pending DB row with the LLM response; called by index.js after the reply is sent
-- `threadService.trackMessages(...messageIds)` — maps Telegram message IDs to this thread in Redis for future lookups; no in-memory cache (Redis is the single source of truth)
-- `thread.append(role, content)` — pure method on the Thread data class; adds a message to history, trims to 20 entries; called by `LLMService.chat()` for the assistant reply
+- `new ThreadService({ store, db, user })` — singleton service; `store`/`db`/`user` injected for testability; `_dataSource` is set per-request in `resolveOrCreate()`
+- `threadService.resolveOrCreate(incoming)` — sets `_dataSource` ("db" for groups and non-stealth PM, "store" for stealth PM); resolves thread by reply or creates a new one; returns the `Thread` or `null`
+- `threadService.appendPrompt(prompt)` — appends user message to history; "store": tracks user `messageId → threadId` in Redis; "db": creates a `Message` row (stores `messageId`)
+- `threadService.updateReply(replyMessageId, { replyModel })` — finalises the exchange after the bot reply is sent; "store": serializes history to Redis + tracks bot reply `messageId → threadId` in Redis; "db": updates the pending `Message` row with `response`, `replyModel`, and `replyMessageId`
+- `threadService.resolve(replyToId)` — "store": Redis `msgKey` lookup; "db": `Message.findFirst` by `messageId OR replyMessageId`, then `load(threadId)`
+- `thread.append(role, content)` — pure method on the Thread data class; called by `LLMService.chat()` for the assistant reply
+- `thread.serialize()` — strips image blocks from history for Redis storage; image-only turns become `"[image]"`
 - `thread.toPublicUrl()` — returns the public archive URL (`EXTERNAL_URL/archive/{thread.id}`)
-- `thread.stealth` — boolean set at construction time from `_fetchUserInfo`; when `true`, all DB writes are suppressed (Redis-only); `Thread` holds only `id`, `history`, and `stealth` — no service-set mutable state
-- All Redis keys use a rolling 7-day TTL (managed by `src/libs/store.js`); thread continuation requires Redis — without it, `resolve()` always returns null
+- All Redis keys use a rolling 7-day TTL (managed by `src/libs/store.js`); stealth threads require Redis — without it, stealth `resolve()` always returns null; non-stealth threads resolve via DB
 - The system prompt is assembled from ordered `.md` files in `src/llm/prompts/` (see below); `LLM_SYSTEM_PROMPT` env var appends extra instructions after them
 - Each user message is prefixed with `@username: ` (falling back to first name) so the LLM can distinguish between users in a shared thread
 

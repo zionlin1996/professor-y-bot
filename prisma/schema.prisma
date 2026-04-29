@@ -44,6 +44,8 @@ model Message {
   content             String
   response            String?
   replyModel          String?      @map("reply_model")
+  messageId           String?      @map("message_id")
+  replyMessageId      String?      @map("reply_message_id")
   attachmentFileId    String?      @map("attachment_file_id")
   attachmentMediaType String?      @map("attachment_media_type")
   createdAt           DateTime     @default(now()) @map("created_at")
