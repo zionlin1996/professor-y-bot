@@ -139,7 +139,9 @@ class ThreadService {
    */
   async resolveOrCreate() {
     const incoming = this._incoming;
-    const { stealth, permissionLevel } = await this._fetchUserInfo(incoming.userId);
+    const { stealth, permissionLevel } = await this._fetchUserInfo(
+      incoming.userId,
+    );
 
     let thread;
 
@@ -165,7 +167,10 @@ class ThreadService {
 
     // Private chat
     if (permissionLevel === null || permissionLevel === 1) {
-      return { reject: true, reason: "Sorry, private chat access is restricted." };
+      return {
+        reject: true,
+        reason: "Sorry, private chat access is restricted.",
+      };
     }
     if (incoming.replyToId) {
       thread = await this.resolve(incoming.replyToId, { stealth });
@@ -199,10 +204,25 @@ class ThreadService {
     thread.append("user", prefixedContent);
 
     if (thread.stealth || !this._db) return;
+    // Validate userId exists in userProfile before inserting to respect FK constraint
+    let finalUserId = null;
+    if (userId) {
+      try {
+        const profile = await this._db.userProfile.findUnique({
+          where: { id: String(userId) },
+        });
+        if (profile) {
+          finalUserId = String(userId);
+        }
+      } catch {
+        // If query fails, fall back to null
+        finalUserId = null;
+      }
+    }
     const record = await this._db.message.create({
       data: {
         threadId: thread.id,
-        userId: userId ? String(userId) : null,
+        userId: finalUserId,
         content: String(cleanContent),
         attachmentFileId: attachment?.fileId ?? null,
         attachmentMediaType: attachment?.mediaType ?? null,
