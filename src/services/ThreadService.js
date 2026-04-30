@@ -83,7 +83,11 @@ class ThreadService {
       orderBy: { createdAt: "asc" },
     });
     const history = messages.flatMap((m) => [
-      { role: "user", content: m.content },
+      // TODO: DB only stores the stripped text, so image-only messages have content="".
+      // We fall back to a placeholder to avoid the "user messages must have non-empty content"
+      // error from the Claude API. Ideally we should re-fetch the image via attachmentFileId
+      // and reconstruct the full image block so the LLM retains visual context in long threads.
+      { role: "user", content: m.content || (m.attachmentFileId ? "[image]" : "[message]") },
       ...(m.response ? [{ role: "assistant", content: m.response }] : []),
     ]);
     return new Thread(threadId, history);

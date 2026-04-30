@@ -11,7 +11,6 @@ setGlobalDispatcher(
   }),
 );
 
-const servicesContainer = require("./src/services");
 const setup = require("./src/setup");
 const formatReply = require("./src/libs/formatReply");
 const exportHtml = require("./src/libs/exportHtml");
@@ -24,13 +23,15 @@ const {
 const startSubscriber = require("./src/libs/subscriber");
 const express = require("express");
 const EnhancedBot = require("./src/bot");
+const createSeriviceContainer = require("./src/services");
 
 const botUsername = process.env.TELEGRAM_BOT_USERNAME;
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const mode = process.env.NODE_ENV;
-const bot = new EnhancedBot(token, { mode }, servicesContainer);
+const bot = new EnhancedBot(token, { mode });
 
-bot.onMessage(async (message, services) => {
+bot.onMessage(async (message) => {
+  const services = createSeriviceContainer();
   const threadService = services.get("thread");
   try {
     // Incoming message is not valid, ignore it
@@ -97,13 +98,15 @@ bot.onMessage(async (message, services) => {
 });
 
 for (const cmd of Object.values(SLASH_COMMANDS)) {
-  bot.onCommand(cmd, (incoming, services) =>
-    services.get("botControl").handleCommand(incoming, services),
-  );
+  bot.onCommand(cmd, (incoming) => {
+    const services = createSeriviceContainer();
+    return services.get("botControl").handleCommand(incoming);
+  });
 }
-bot.on("callback_query", (query) =>
-  servicesContainer.get("botControl").handleCallback(query),
-);
+bot.on("callback_query", (query) => {
+  const services = createSeriviceContainer();
+  return services.get("botControl").handleCallback(query);
+});
 
 async function main() {
   startSubscriber(bot);
@@ -118,9 +121,8 @@ async function main() {
 
   app.get("/archive/:hash", async (req, res) => {
     try {
-      const thread = await servicesContainer
-        .get("thread")
-        .load(req.params.hash);
+      const services = createSeriviceContainer();
+      const thread = await services.get("thread").load(req.params.hash);
       if (!thread || thread.history.length === 0) {
         return res.status(404).send("Conversation not found or has expired.");
       }
