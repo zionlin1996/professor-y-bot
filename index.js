@@ -31,6 +31,7 @@ const mode = process.env.NODE_ENV;
 const bot = new EnhancedBot(token, { mode }, servicesContainer);
 
 bot.onMessage(async (message, services) => {
+  const threadService = services.get("thread");
   try {
     // Incoming message is not valid, ignore it
     if (!message.isValid) return;
@@ -51,7 +52,6 @@ bot.onMessage(async (message, services) => {
       return bot.sendMessage(chatId, "Access denied.");
 
     // Resolve the thread context with the message data
-    const threadService = services.get("thread");
     const thread = await threadService.resolveOrCreate(message);
     // Incoming message is not in a valid thread context, ignore it
     if (!thread) return;
@@ -89,6 +89,8 @@ bot.onMessage(async (message, services) => {
       chatId,
       "Sorry, something went wrong. Please try again."
     );
+  } finally {
+    threadService.cleanup();
   }
 });
 

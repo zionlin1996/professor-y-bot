@@ -110,6 +110,11 @@ class ThreadService {
     return new Thread(threadId, raw ? JSON.parse(raw) : [], true);
   }
 
+  cleanup() {
+    this.current = null;
+    this._pendingMessageId = null;
+  }
+
   async resolveOrCreate(incoming) {
     if (incoming.replyToId) {
       this.current = await this.resolve(incoming.replyToId);
