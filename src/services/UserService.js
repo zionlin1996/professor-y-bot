@@ -77,7 +77,7 @@ class UserService {
       text: dbText,
       content,
       attachment,
-      userId: incoming.userId,
+      userId: this.current.userId,
       username: incoming.username,
       messageId: String(incoming.id),
     });
