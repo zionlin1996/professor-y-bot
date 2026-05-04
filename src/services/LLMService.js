@@ -25,9 +25,10 @@ const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 const SETTINGS_KEY = "setting:active_model";
 
 class LLMService {
+  static modelListCache = {};
+
   constructor({ store } = {}) {
     this._store = store;
-    this._modelListCache = {};
     this._initBackend(DEFAULT_BACKEND, DEFAULT_MODEL);
   }
 
@@ -40,7 +41,7 @@ class LLMService {
     this.backendName = backendName;
   }
 
-  /** Load persisted model selection from Redis. Call once on startup. */
+  /** Load persisted model selection from Redis. Called per-request; also once on startup as a warm-up. */
   async init() {
     const stored = await this._store?.get(SETTINGS_KEY);
     if (!stored) return;
@@ -52,9 +53,9 @@ class LLMService {
     }
   }
 
-  /** Fetch available models from all configured backends. Populates _modelListCache. */
+  /** Fetch available models from all configured backends. Populates modelListCache. */
   async listModels() {
-    this._modelListCache = {};
+    LLMService.modelListCache = {};
     const results = [];
     for (const [name, load] of Object.entries(BACKENDS)) {
       try {
@@ -62,7 +63,7 @@ class LLMService {
         const instance = new Backend();
         const models = await instance.listModels();
         if (models.length) {
-          this._modelListCache[name] = models;
+          LLMService.modelListCache[name] = models;
           results.push({ backend: name, models });
         }
       } catch {
@@ -84,17 +85,17 @@ class LLMService {
 
   /** Backends with at least one cached model from the most recent listModels() call. */
   availableBackends() {
-    return Object.keys(this._modelListCache);
+    return Object.keys(LLMService.modelListCache);
   }
 
   /** Cached model names for a backend (empty array if none). */
   models(backendName) {
-    return this._modelListCache[backendName] || [];
+    return LLMService.modelListCache[backendName] || [];
   }
 
   /** Cached model name at index, or undefined. */
   modelAt(backendName, index) {
-    return this._modelListCache[backendName]?.[index];
+    return LLMService.modelListCache[backendName]?.[index];
   }
 
   // thread.history must already contain the user message (appended via threadService.appendMessage()).

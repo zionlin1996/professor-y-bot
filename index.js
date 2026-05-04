@@ -32,6 +32,7 @@ const bot = new EnhancedBot(token, { mode });
 
 bot.onMessage(async (message) => {
   const services = createSeriviceContainer();
+  await services.get("llm").init();
   const threadService = services.get("thread");
   try {
     // Incoming message is not valid, ignore it
@@ -96,21 +97,24 @@ bot.onMessage(async (message) => {
 });
 
 for (const cmd of Object.values(SLASH_COMMANDS)) {
-  bot.onCommand(cmd, (incoming) => {
+  bot.onCommand(cmd, async (incoming) => {
     const services = createSeriviceContainer();
+    await services.get("llm").init();
     const botControl = services.get("botControl");
     botControl.use(bot);
     return botControl.handleCommand(incoming);
   });
 }
-bot.on("callback_query", (query) => {
+bot.on("callback_query", async (query) => {
   const services = createSeriviceContainer();
+  await services.get("llm").init();
   const botControl = services.get("botControl");
   botControl.use(bot);
   return botControl.handleCallback(query);
 });
 
 async function main() {
+  await createSeriviceContainer().get("llm").init();
   startSubscriber(bot);
 
   await bot.setMyCommands(

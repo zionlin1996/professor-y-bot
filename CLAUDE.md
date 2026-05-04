@@ -33,7 +33,7 @@ The bot activates in group chats whenever it is **@mentioned** — either in a r
 ```
 index.js                      ← thin bootstrap: resolves deps from container, registers bot event handlers
 src/
-  container.js                ← DI container: registers all singletons (bot, llm, store, db, botControl) and the per-request threadService factory; use container.get(name) to resolve
+  container.js                ← DI container: registers all singletons (bot, store, db, botControl) and per-request factories (llm, thread); use container.get(name) to resolve
   bot.js                      ← EnhancedBot: wraps every raw message in IncomingMessage DTO, dispatches commands via onCommand registry, forwards the rest to onMessage handler
   setup.js                    ← dev (polling) vs production (webhook) setup
   constants/
@@ -323,8 +323,8 @@ Return a string to send as a reply, or `null` to handle sending inside the handl
 The active backend and model are selected at runtime via `/model` — no env vars needed. The selection is persisted to Redis with no expiry (`store.set(..., null)`) so it survives restarts.
 
 - **Default (first boot / no Redis):** `claude / claude-haiku-4-5-20251001` (hardcoded in `src/services/LLMService.js`)
-- **`llm.init()`** — called on startup in `main()`; loads the stored `setting:active_model` key and calls `_initBackend(backend, model)`; falls back silently to default if the key is missing or the stored backend has no API key
-- **`llm.listModels()`** — instantiates each backend whose API key is set, calls `listModels()` on it, and caches results internally; OpenAI returns the 6 most recent chat models (filtered by `gpt-*|o1|o3|o4`, sorted by `created`); Gemini returns all `gemini-*` non-embedding models; Claude returns all `claude-*` models; Lumo returns a hardcoded list. Read the cache via `llm.availableBackends()`, `llm.models(backendName)`, `llm.modelAt(backendName, index)`
+- **`llm.init()`** — called per-request at the start of each handler (and once on startup in `main()` as a warm-up); loads the stored `setting:active_model` key and calls `_initBackend(backend, model)` on the instance; falls back silently to default if the key is missing or the stored backend has no API key
+- **`llm.listModels()`** — instantiates each backend whose API key is set, calls `listModels()` on it, and caches results in `LLMService.modelListCache` (static — shared across all instances); OpenAI returns the 6 most recent chat models (filtered by `gpt-*|o1|o3|o4`, sorted by `created`); Gemini returns all `gemini-*` non-embedding models; Claude returns all `claude-*` models; Lumo returns a hardcoded list. Read the cache via `llm.availableBackends()`, `llm.models(backendName)`, `llm.modelAt(backendName, index)`
 - **`llm.setActiveModel(backend, model)`** — calls `_initBackend()` then persists to Redis
 - **Callback flow** — `callback_data` prefixes: `mp:{backend}` (show provider's models), `ms:{backend}:{index}` (select model by cache index), `mb` (back to provider list); index avoids the Telegram 64-byte callback data limit on long model names
 - **Admin guard** — `permissionLevel === 0` in the DB; checked via `BotControlService._isAdmin(userId)` for both `/model` and callback queries
