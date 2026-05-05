@@ -43,6 +43,7 @@
     "node-telegram-bot-api": "^0.66.0",
     "openai": "^4.28.0",
     "pg": "^8.20.0",
+    "table": "^6.9.0",
     "undici": "^7.0.0"
   },
   "devDependencies": {

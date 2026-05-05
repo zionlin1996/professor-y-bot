@@ -6,12 +6,15 @@ const BotControlService = require("./BotControlService");
 const UserService = require("./UserService");
 const Container = require("./container");
 
+// LLMService must be a singleton — _modelListCache must persist across requests
+const llmService = new LLMService({ store });
+
 function createSeriviceContainer() {
   const container = new Container();
   container.register("store", () => store);
   container.register("db", () => getDb());
   container.register("user", (c) => new UserService({ db: c.get("db") }));
-  container.register("llm", (c) => new LLMService({ store: c.get("store") }));
+  container.register("llm", () => llmService);
   container.register(
     "botControl",
     (c) => new BotControlService({ llm: c.get("llm"), db: c.get("db") }),
