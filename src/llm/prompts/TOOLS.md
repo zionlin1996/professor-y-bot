@@ -55,8 +55,9 @@ Retrieve the persistent Markdown profile notes you have previously saved about a
 - If you already retrieved the profile for this user earlier in the same conversation
 
 **How to call:**
-- Omit `username` to fetch the current user's own profile
-- Pass `username` (without @) to look up a different user — e.g. if the user asks "what do you know about @alice?", call with `{ "username": "alice" }`
+- Omit both `username` and `userId` to fetch the current user's own profile
+- Pass `username` (without @) to look up a user whose sender prefix shows `@handle:` — e.g. `{ "username": "alice" }`
+- Pass `userId` (the numeric ID) to look up a user whose sender prefix shows `Name (id:XXXXXXXX):` — these users have no Telegram handle, so username lookup will not work; use the numeric id instead, e.g. `{ "userId": "123456789" }`
 
 **After calling:**
 You MUST always follow the tool call with a text reply — never return an empty response. Use the retrieved profile to inform your reply; do not recite it back verbatim unless the user explicitly asks.

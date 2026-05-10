@@ -9,8 +9,9 @@ const getDefinition = {
   name: "get_user_profile",
   description:
     "Retrieve the persistent Markdown profile notes for a user. " +
-    "Omit 'username' to fetch the current user's profile. " +
-    "Pass a Telegram username (without @) to look up another user's profile — useful when someone asks about another member of the group. " +
+    "Omit both 'username' and 'userId' to fetch the current user's profile. " +
+    "Pass 'username' (without @) to look up a user who has a Telegram handle. " +
+    "Pass 'userId' (the numeric id shown in the sender prefix as 'id:XXXXXXXX') to look up a user who has no Telegram handle. " +
     "Returns three possible states: NOT_REGISTERED (no record exists), EMPTY_PROFILE (registered but no notes saved), or the notes themselves.",
   parameters: {
     type: "object",
@@ -18,7 +19,12 @@ const getDefinition = {
       username: {
         type: "string",
         description:
-          "The Telegram username (without @) of the user to look up. Omit to retrieve the current user's own profile.",
+          "The Telegram username (without @) of the user to look up. Use this when the sender prefix shows '@handle:'.",
+      },
+      userId: {
+        type: "string",
+        description:
+          "The numeric Telegram user ID of the user to look up. Use this when the sender prefix shows 'Name (id:XXXXXXXX):' — i.e. the user has no Telegram handle.",
       },
     },
     required: [],
@@ -50,12 +56,12 @@ const updateDefinition = {
  * - "EMPTY_PROFILE:..." if user is registered but has no notes saved
  * - The notes themselves if they exist
  */
-async function getProfile({ username: targetUsername } = {}, { userId: currentUserId, username: currentUsername } = {}) {
+async function getProfile({ username: targetUsername, userId: targetUserId } = {}, { userId: currentUserId, username: currentUsername } = {}) {
   const db = getDb();
   if (!db) return "Database not available.";
 
   if (targetUsername) {
-    // Cross-user lookup by username
+    // Cross-user lookup by Telegram handle
     const record = await db.userProfile.findUnique({ where: { username: targetUsername } });
     if (!record) {
       return `NOT_REGISTERED: @${targetUsername} has not run /start yet.`;
@@ -66,9 +72,21 @@ async function getProfile({ username: targetUsername } = {}, { userId: currentUs
     return record.notes;
   }
 
+  if (targetUserId) {
+    // Cross-user lookup by numeric userId (for users without a Telegram handle)
+    const record = await db.userProfile.findUnique({ where: { id: String(targetUserId) } });
+    if (!record) {
+      return `NOT_REGISTERED: User (id:${targetUserId}) has not run /start yet.`;
+    }
+    if (!record.notes || record.notes.trim() === "") {
+      return `EMPTY_PROFILE: User (id:${targetUserId}) is registered but has no notes saved yet.`;
+    }
+    return record.notes;
+  }
+
   if (!currentUserId) return "User identity unavailable.";
   const record = await db.userProfile.findUnique({ where: { id: String(currentUserId) } });
-  
+
   if (!record) {
     return `NOT_REGISTERED: ${currentUsername ? `@${currentUsername}` : "You"} has not run /start yet.`;
   }

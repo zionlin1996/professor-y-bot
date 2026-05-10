@@ -74,10 +74,12 @@ class IncomingMessage {
     return { text, inlineCommands };
   }
 
-  /** "@username: " prefix for LLM context. Falls back to first_name then "user". */
+  /** Sender identifier for LLM context. Uses "@handle: " when a Telegram username exists; falls back to "FirstName (id:XXXXXXXX): " so the LLM can still reference the user via userId. */
   get senderPrefix() {
-    const name = this.from?.username || this.from?.first_name || "user";
-    return `@${name}: `;
+    if (this.from?.username) return `@${this.from.username}: `;
+    const name = this.from?.first_name || "User";
+    const id = this.from?.id ?? this.userId;
+    return `${name} (id:${id}): `;
   }
 
   /** Message text with @botUsername stripped. */

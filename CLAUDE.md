@@ -222,7 +222,7 @@ Thread management lives in `src/services/ThreadService.js`. A singleton `ThreadS
 - `thread.toPublicUrl()` — returns the public archive URL (`EXTERNAL_URL/archive/{thread.id}`)
 - All Redis keys use a rolling 7-day TTL (managed by `src/libs/store.js`); ephemeral thread history expires after 7 days; regular threads resolve via DB indefinitely
 - The system prompt is assembled from ordered `.md` files in `src/llm/prompts/` (see below); `LLM_SYSTEM_PROMPT` env var appends extra instructions after them
-- Each user message is prefixed with `@username: ` (falling back to first name) so the LLM can distinguish between users in a shared thread
+- Each user message is prefixed so the LLM can distinguish speakers: `@handle: ` when the sender has a Telegram username, or `FirstName (id:XXXXXXXX): ` when they do not — the numeric ID can be passed to `get_user_profile` as `userId` for cross-user profile lookups
 
 ## System prompt files
 
