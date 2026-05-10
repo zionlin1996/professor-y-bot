@@ -4,6 +4,7 @@ const Prompt = require("../dto/Prompt");
 const GUEST_USER = {
   isRestricted: true,
   isGuest: true,
+  isAdmin: false,
   stealth: false,
   permissionLevel: null,
 };
@@ -29,6 +30,7 @@ class UserService {
       ...profile,
       stealth: profile.stealthMode,
       isGuest: false,
+      isAdmin: profile.permissionLevel === 0,
       isRestricted:
         profile.permissionLevel === null || profile.permissionLevel === 1,
     };

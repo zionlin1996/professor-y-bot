@@ -21,18 +21,34 @@ const {
   SLASH_COMMANDS,
 } = require("./src/constants/commands");
 const startSubscriber = require("./src/libs/subscriber");
+const profileGuard = require("./src/libs/bot/guards/profile");
+const pmOnly = require("./src/libs/bot/guards/pm-only");
+
+function backendRows(names) {
+  const rows = [];
+  for (let i = 0; i < names.length; i += 2) {
+    rows.push(
+      names.slice(i, i + 2).map((name) => ({
+        text: name.charAt(0).toUpperCase() + name.slice(1),
+        callback_data: `mp:${name}`,
+      })),
+    );
+  }
+  return rows;
+}
 const express = require("express");
 const EnhancedBot = require("./src/bot");
-const createSeriviceContainer = require("./src/services");
+const createServiceContainer = require("./src/services");
 
 const botUsername = process.env.TELEGRAM_BOT_USERNAME;
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const mode = process.env.NODE_ENV;
-const bot = new EnhancedBot(token, { mode });
+const bot = new EnhancedBot(token, {
+  mode,
+  serviceContainerFactory: createServiceContainer,
+});
 
-bot.onMessage(async (message) => {
-  const services = createSeriviceContainer();
-  await services.get("llm").init();
+bot.onMessage(async (message, services) => {
   const threadService = services.get("thread");
   try {
     // Incoming message is not valid, ignore it
@@ -96,25 +112,283 @@ bot.onMessage(async (message) => {
   }
 });
 
-for (const cmd of Object.values(SLASH_COMMANDS)) {
-  bot.onCommand(cmd, async (incoming) => {
-    const services = createSeriviceContainer();
-    await services.get("llm").init();
-    const botControl = services.get("botControl");
-    botControl.use(bot);
-    return botControl.handleCommand(incoming);
-  });
-}
-bot.on("callback_query", async (query) => {
-  const services = createSeriviceContainer();
-  await services.get("llm").init();
-  const botControl = services.get("botControl");
-  botControl.use(bot);
-  return botControl.handleCallback(query);
+bot.onCommand(
+  SLASH_COMMANDS.START,
+  pmOnly,
+  profileGuard,
+  async (incoming, services) => {
+    const db = services.get("db");
+    const { userId, username, from } = incoming;
+    const uid = String(userId);
+    const displayName = username ? `@${username}` : from?.first_name || uid;
+
+    const existing = await db.userProfile.findUnique({ where: { id: uid } });
+    if (existing)
+      return bot.sendMessage(
+        incoming.chatId,
+        "Your profile is already set up. Use /me to view your notes.",
+        { reply_to_message_id: incoming.id },
+      );
+
+    await db.userProfile.create({
+      data: { id: uid, username: username || null },
+    });
+
+    const admins = await db.userProfile.findMany({
+      where: { permissionLevel: 0 },
+    });
+    await Promise.all(
+      admins.map((admin) =>
+        bot.sendMessage(
+          admin.id,
+          `New user joined: ${displayName} (ID: <code>${uid}</code>)\nGrant PM access?`,
+          {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "✓ Enable", callback_data: `up_e:${uid}` },
+                  { text: "✗ Ignore", callback_data: `up_i:${uid}` },
+                ],
+              ],
+            },
+          },
+        ),
+      ),
+    );
+    return bot.sendMessage(
+      incoming.chatId,
+      "Profile created! You'll be notified once your access is confirmed.",
+      { reply_to_message_id: incoming.id },
+    );
+  },
+);
+
+bot.onCommand(
+  SLASH_COMMANDS.ME,
+  pmOnly,
+  profileGuard,
+  async (incoming, services) => {
+    const db = services.get("db");
+    const { id, chatId, userId, username } = incoming;
+    const record = await db.userProfile.findUnique({
+      where: { id: String(userId) },
+    });
+    const displayName = username ? `@${username}` : "your account";
+    if (!record || !record.notes)
+      return bot.sendMessage(
+        chatId,
+        `No profile on record for ${displayName}.`,
+        {
+          reply_to_message_id: id,
+        },
+      );
+
+    return bot.sendMessage(
+      chatId,
+      `<b>${displayName}'s profile:</b>\n\n${record.notes}`,
+      { parse_mode: "HTML", reply_to_message_id: id },
+    );
+  },
+);
+
+bot.onCommand(
+  SLASH_COMMANDS.FORGET,
+  pmOnly,
+  profileGuard,
+  async (incoming, services) => {
+    const db = services.get("db");
+    const { userId, username } = incoming;
+    const uid = String(userId);
+    const displayName = username ? `@${username}` : "your account";
+    const record = await db.userProfile.findUnique({ where: { id: uid } });
+    if (!record || !record.notes)
+      return bot.sendMessage(
+        incoming.chatId,
+        `No profile on record for ${displayName} — nothing to clear.`,
+        { reply_to_message_id: incoming.id },
+      );
+
+    await db.userProfile.update({ where: { id: uid }, data: { notes: "" } });
+    return bot.sendMessage(
+      incoming.chatId,
+      `Profile cleared for ${displayName}.`,
+      { reply_to_message_id: incoming.id },
+    );
+  },
+);
+
+bot.onCommand(
+  SLASH_COMMANDS.STEALTH,
+  pmOnly,
+  profileGuard,
+  async (incoming, services) => {
+    const db = services.get("db");
+    const { userId, text } = incoming;
+    const arg = text.trim().split(/\s+/)[1]?.toLowerCase();
+    const enable = arg !== "off";
+
+    const { count } = await db.userProfile.updateMany({
+      where: { id: userId },
+      data: { stealthMode: enable },
+    });
+    if (count === 0)
+      return bot.sendMessage(
+        incoming.chatId,
+        "No profile found — run /start first to set up your profile.",
+        { reply_to_message_id: incoming.id },
+      );
+    return bot.sendMessage(
+      incoming.chatId,
+      enable
+        ? "Stealth mode ON — your messages will not be stored to the database."
+        : "Stealth mode OFF — your messages will be stored normally.",
+      { reply_to_message_id: incoming.id },
+    );
+  },
+);
+
+bot.onCommand(SLASH_COMMANDS.MODEL, pmOnly, async (incoming, services) => {
+  const llm = services.get("llm");
+  const { chatId } = incoming;
+
+  let isAdmin = false;
+  try {
+    const userService = services.get("user");
+    await userService.loadFrom(incoming);
+    isAdmin = userService.current.isAdmin;
+  } catch {}
+
+  if (!isAdmin)
+    return bot.sendMessage(chatId, llm.providerInfo(), {
+      reply_to_message_id: incoming.id,
+    });
+
+  const groups = await llm.listModels();
+  if (!groups.length)
+    return bot.sendMessage(
+      chatId,
+      "No models available — check your API keys.",
+    );
+
+  return bot.sendMessage(
+    chatId,
+    `Current: <b>${llm.providerInfo()}</b>\n\nChoose a provider:`,
+    {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: backendRows(groups.map((g) => g.backend)),
+      },
+    },
+  );
+});
+
+bot.onCallback(async (query, services) => {
+  const { data, message, from } = query;
+  const db = services.get("db");
+  const llm = services.get("llm");
+  const chatId = message.chat.id;
+  const messageId = message.message_id;
+
+  let isAdmin = false;
+  try {
+    const userService = services.get("user");
+    await userService.loadFrom({ userId: String(from?.id) });
+    isAdmin = userService.current.isAdmin;
+  } catch {}
+
+  if (data.startsWith("up_e:") || data.startsWith("up_i:")) {
+    try {
+      if (!isAdmin) {
+        await bot.answerCallbackQuery(query.id);
+        return;
+      }
+      const actorName = from?.username ? `@${from.username}` : String(from?.id);
+      if (data.startsWith("up_e:")) {
+        const targetId = data.slice(5);
+        if (db)
+          await db.userProfile.updateMany({
+            where: { id: targetId },
+            data: { permissionLevel: 2 },
+          });
+        await bot.editMessageText(
+          `${message.text}\n\n✓ <b>Enabled</b> by ${actorName}`,
+          { chat_id: chatId, message_id: messageId, parse_mode: "HTML" },
+        );
+        await bot.sendMessage(
+          targetId,
+          "Your access has been approved — you can now chat with me in private.",
+        );
+      } else {
+        await bot.editMessageText(
+          `${message.text}\n\n— <b>Ignored</b> by ${actorName}`,
+          { chat_id: chatId, message_id: messageId, parse_mode: "HTML" },
+        );
+      }
+      await bot.answerCallbackQuery(query.id);
+    } catch (err) {
+      console.error("[callback] promotion error:", err);
+      await bot.answerCallbackQuery(query.id, { text: "Something went wrong" });
+    }
+    return;
+  }
+
+  if (!isAdmin) {
+    await bot.answerCallbackQuery(query.id);
+    return;
+  }
+
+  try {
+    if (data.startsWith("mp:")) {
+      const backendName = data.slice(3);
+      const models = llm.models(backendName);
+      const rows = models.map((m, i) => [
+        { text: m, callback_data: `ms:${backendName}:${i}` },
+      ]);
+      rows.push([{ text: "← Back", callback_data: "mb" }]);
+      await bot.editMessageText(`<b>${backendName}</b> — select a model:`, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: rows },
+      });
+      await bot.answerCallbackQuery(query.id);
+    } else if (data.startsWith("ms:")) {
+      const [, backendName, indexStr] = data.split(":");
+      const modelName = llm.modelAt(backendName, parseInt(indexStr));
+      if (modelName) {
+        await llm.setActiveModel(backendName, modelName);
+        await bot.editMessageText(
+          `✓ Switched to <b>${backendName} / ${modelName}</b>`,
+          { chat_id: chatId, message_id: messageId, parse_mode: "HTML" },
+        );
+        await bot.answerCallbackQuery(query.id, {
+          text: `Now using ${modelName}`,
+        });
+      } else {
+        await bot.answerCallbackQuery(query.id, { text: "Model not found" });
+      }
+    } else if (data === "mb") {
+      await bot.editMessageText(
+        `Current: <b>${llm.providerInfo()}</b>\n\nChoose a provider:`,
+        {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: backendRows(llm.availableBackends()),
+          },
+        },
+      );
+      await bot.answerCallbackQuery(query.id);
+    }
+  } catch (err) {
+    console.error("[callback] error:", err);
+    await bot.answerCallbackQuery(query.id, { text: "Something went wrong" });
+  }
 });
 
 async function main() {
-  await createSeriviceContainer().get("llm").init();
   startSubscriber(bot);
 
   await bot.setMyCommands(
@@ -124,11 +398,14 @@ async function main() {
 
   const app = express();
   app.use(express.json());
+  app.use((req, _res, next) => {
+    req.services = createServiceContainer();
+    next();
+  });
 
   app.get("/archive/:hash", async (req, res) => {
     try {
-      const services = createSeriviceContainer();
-      const thread = await services.get("thread").load(req.params.hash);
+      const thread = await req.services.get("thread").load(req.params.hash);
       if (!thread || thread.history.length === 0) {
         return res.status(404).send("Conversation not found or has expired.");
       }

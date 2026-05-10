@@ -33,8 +33,8 @@ The bot activates in group chats whenever it is **@mentioned** — either in a r
 ```
 index.js                      ← thin bootstrap: resolves deps from container, registers bot event handlers
 src/
-  container.js                ← DI container: registers all singletons (bot, store, db, botControl) and per-request factories (llm, thread); use container.get(name) to resolve
-  bot.js                      ← EnhancedBot: wraps every raw message in IncomingMessage DTO, dispatches commands via onCommand registry, forwards the rest to onMessage handler
+  container.js                ← DI container: registers all singletons (bot, store, db) and per-request factories (llm, thread, user); use container.get(name) to resolve
+  bot.js                      ← EnhancedBot: accepts serviceContainerFactory in constructor; creates a service container per event and passes it as second arg to onMessage/onCommand/onCallback handlers; dispatches commands via onCommand registry, forwards the rest to onMessage handler
   setup.js                    ← dev (polling) vs production (webhook) setup
   constants/
     commands.js               ← SLASH_COMMANDS, INLINE_COMMANDS, and BOT_COMMANDS (Telegram registration list)
@@ -42,7 +42,6 @@ src/
     IncomingMessage.js        ← pure DTO: parses raw Telegram msg synchronously, exposes rawContent/isValid/isCommand/inlineCommand() — no async, no DB
   services/
     ThreadService.js          ← singleton service: thread create/load/resolve/resolveOrCreate(incoming), appendPrompt, updateReply; thread.ephemeral drives storage branching (Redis for ephemeral, DB for regular)
-    BotControlService.js      ← instantiatable service: slash command dispatch + callback_query handling
     LLMService.js             ← instantiatable service: backend routing, chat orchestration
   llm/
     prompts/
@@ -66,6 +65,10 @@ src/
     redis.js                  ← shared Redis client (null when REDIS_PASSWORD unset)
     store.js                  ← thin wrapper around redis.js: null-guard + TTL, used by ThreadService
     db.js                     ← null-safe Prisma client singleton (null when DATABASE_URL unset)
+    bot/
+      guards/
+        profile.js            ← profile(incoming, services): guards userId present + db available; returns an error string, "" (silent drop), or null (pass); used by command handlers
+        pm-only.js            ← pmOnly(incoming): returns "" (silent drop) for group messages, null otherwise; used as a guard on all PM-only commands
     subscriber.js             ← Redis Pub/Sub subscriber → bot.sendMessage on notification (no-op when REDIS_PASSWORD unset)
 prisma/
   schema.prisma               ← Production schema (PostgreSQL; empty — add models here)
@@ -164,7 +167,7 @@ The `!info` inline action generates a shareable archive link embedded in the bot
 - **Trigger**: include `!info` anywhere in a message that the bot will process (group: `@bot !info ...` or in a thread reply; PM: `!info ...`)
 - **Output**: bot appends a `<code>` block to the bottom of its reply with model name, thread ID, and archive URL
 - **URL format**: `EXTERNAL_URL/archive/{threadId}` — the thread ID is itself a 128-bit cryptographically random hex string; security model is "secret link" (the ID is the only credential — no login required)
-- **Rendering**: `GET /archive/:hash` calls `new ThreadService(null, { store, db }).load(hash)`, renders `exportHtml` server-side on every request (always reflects current thread state)
+- **Rendering**: `GET /archive/:hash` resolves `req.services.get("thread").load(hash)` (injected via Express middleware), renders `exportHtml` server-side on every request (always reflects current thread state)
 - **Expiry**: thread history is now persistent in the DB; Redis TTL only affects in-memory history recency, not archive availability
 - **Dev mode**: the Express server does not call `app.listen` in development (polling) mode, so archive links are only accessible in production. The `!info` token still generates a valid URL, but it will not resolve locally
 
@@ -186,7 +189,7 @@ yarn clear-commands
 ```
 
 - **Script**: `scripts/clear-commands.js` — calls `deleteMyCommands` across all scopes (default, private chats, group chats, admins), prints before/after state
-- Adding a new command: add its handler to `_commands()` in `src/services/BotControlService.js` and register it in `BOT_COMMANDS` in `src/constants/commands.js`
+- Adding a new command: add the key to `SLASH_COMMANDS` in `src/constants/commands.js`, add a `{ command, description }` entry to `BOT_COMMANDS`, and register a `bot.onCommand(SLASH_COMMANDS.X, ...)` handler in `index.js`
 
 ## Adding a new LLM backend
 
@@ -284,7 +287,7 @@ The default system prompt is assembled in `src/services/LLMService.js` by loadin
 | `ms:{backend}:{index}` | `/model`              | Select model by index in the cached list                                     |
 | `mb`                   | `/model`              | Back to provider list                                                        |
 
-`up_e:`/`up_i:` are handled before the model-switching guard — they call `_isAdmin(from.id)` (`permissionLevel === 0` in DB) so any admin can act. The `/model` callbacks use the same `_isAdmin` check.
+`up_e:`/`up_i:` are handled before the model-switching guard — the callback handler loads the actor via `userService.loadFrom({ userId })` and checks `current.isAdmin` (`permissionLevel === 0`). The `/model` callbacks use the same check.
 
 ## Keyword filters
 
@@ -294,21 +297,22 @@ Keyword filters are a separate concept from actions. They are hardcoded string p
 | -------- | ---------------------------------------------------- |
 | `白爛+1` | Message silently dropped; pipeline stops immediately |
 
-## Bot commands (BotControlService)
+## Bot commands
 
-`IncomingMessage._parseCommand()` detects bot commands via `msg.entities` (entity type `bot_command` at offset 0) and exposes `incoming.isCommand` and `incoming.command`. `EnhancedBot` handles dispatch: when `incoming.isCommand` is true it calls the matching handler registered via `bot.onCommand()`; if none matches, the message falls through to `handleMessage`. All `SLASH_COMMANDS` are registered to `botControl.handleCommand` at startup in `index.js`.
+`IncomingMessage._parseCommand()` detects bot commands via `msg.entities` (entity type `bot_command` at offset 0) and exposes `incoming.isCommand` and `incoming.command`. `EnhancedBot` handles dispatch: when `incoming.isCommand` is true it calls the matching handler registered via `bot.onCommand()`; if none matches, the message falls through to `handleMessage`.
 
-Command dispatch and all slash command handlers live in `src/services/BotControlService.js`. All commands are PM-only — `handleCommand` silently returns `false` for group messages. `BotControlService` also exposes `_isAdmin(userId)` (DB `permissionLevel === 0` check) and `_guard(incoming)` (userId + DB availability check) used by command handlers.
+All command handlers and the callback handler live directly in `index.js`, registered via `bot.onCommand(SLASH_COMMANDS.X, async (incoming, services) => {...})` and `bot.onCallback(async (query, services) => {...})`. All commands are PM-only — each handler guards with `if (incoming.isGroup) return` at the top. Admin checks use `userService.current.isAdmin` after calling `userService.loadFrom(incoming)`. User existence and DB availability are checked via `profileGuard` from `src/libs/bot/guards/profile.js`. PM-only enforcement uses `pmOnly` from `src/libs/bot/guards/pm-only.js`. Guard return values: `null` = pass, `""` = silent drop (no message sent), non-empty string = send as error reply and stop.
 
-Adding a new command: add the key to `SLASH_COMMANDS` in `src/constants/commands.js` (auto-registered at startup), add a `{ command, description }` entry to `BOT_COMMANDS` (Telegram display), and add its handler to `_commands()` in `BotControlService`.
+Adding a new command: add the key to `SLASH_COMMANDS` in `src/constants/commands.js` (auto-registered at startup), add a `{ command, description }` entry to `BOT_COMMANDS` (Telegram display), and add a `bot.onCommand(SLASH_COMMANDS.X, ...)` handler in `index.js`.
 
 **Handler signature:**
 
 ```js
-[SLASH_COMMANDS.MYCOMMAND]: async (incoming) => "reply string" | null,
+bot.onCommand(SLASH_COMMANDS.MYCOMMAND, async (incoming, services) => {
+  if (incoming.isGroup) return;
+  // ...
+});
 ```
-
-Return a string to send as a reply, or `null` to handle sending inside the handler.
 
 | Command              | Response                                                                                       |
 | -------------------- | ---------------------------------------------------------------------------------------------- |
@@ -327,7 +331,7 @@ The active backend and model are selected at runtime via `/model` — no env var
 - **`llm.listModels()`** — instantiates each backend whose API key is set, calls `listModels()` on it, and caches results in `LLMService.modelListCache` (static — shared across all instances); OpenAI returns the 6 most recent chat models (filtered by `gpt-*|o1|o3|o4`, sorted by `created`); Gemini returns all `gemini-*` non-embedding models; Claude returns all `claude-*` models; Lumo returns a hardcoded list. Read the cache via `llm.availableBackends()`, `llm.models(backendName)`, `llm.modelAt(backendName, index)`
 - **`llm.setActiveModel(backend, model)`** — calls `_initBackend()` then persists to Redis
 - **Callback flow** — `callback_data` prefixes: `mp:{backend}` (show provider's models), `ms:{backend}:{index}` (select model by cache index), `mb` (back to provider list); index avoids the Telegram 64-byte callback data limit on long model names
-- **Admin guard** — `permissionLevel === 0` in the DB; checked via `BotControlService._isAdmin(userId)` for both `/model` and callback queries
+- **Admin guard** — `permissionLevel === 0` in the DB; checked via `userService.current.isAdmin` after `userService.loadFrom(incoming)` for both `/model` and callback queries
 
 ## Web search
 
@@ -406,7 +410,7 @@ Each Telegram user can have a persistent Markdown profile stored in the `user_pr
 
 ## Stealth mode
 
-Users can opt out of DB message storage on a per-user basis via `/stealth [on|off]`. Requires a profile to exist (run `/start` first); returns an error if none is found. The `stealthMode` flag is stored as a column on the `user_profiles` table; the `/stealth` command handler in `BotControlService` writes it directly via the injected `db`.
+Users can opt out of DB message storage on a per-user basis via `/stealth [on|off]`. Requires a profile to exist (run `/start` first); returns an error if none is found. The `stealthMode` flag is stored as a column on the `user_profiles` table; the `/stealth` command handler in `index.js` writes it directly via `services.get("db")`.
 
 When a PM thread is created, `resolveOrCreate()` reads `user.stealth` and sets `thread.ephemeral = true` if stealth is on. The `Thread` row is always written to DB (with `ephemeral = true`), but no `Message` rows are ever created for ephemeral threads — history lives in Redis only. The stealth toggle takes effect on the next new thread: continuing an existing thread always honours the `ephemeral` flag that was set at creation time, so mid-conversation toggles do not affect the current thread. Ephemeral threads are not accessible via the archive route by design.
 
