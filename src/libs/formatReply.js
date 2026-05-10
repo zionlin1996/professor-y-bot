@@ -1,7 +1,23 @@
 const { marked } = require("marked");
+const { table } = require("table");
+
+function renderTableBlocks(text) {
+  return text.replace(/```table\n([\s\S]*?)```/g, (match, csv) => {
+    try {
+      const rows = csv
+        .trim()
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((row) => row.split(",").map((cell) => cell.trim()));
+      return `<pre>${table(rows)}</pre>`;
+    } catch {
+      return match;
+    }
+  });
+}
 
 function formatReply(text) {
-  let html = marked(text, { breaks: true });
+  let html = marked(renderTableBlocks(text), { breaks: true });
 
   return (
     html

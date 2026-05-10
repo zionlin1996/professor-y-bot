@@ -441,7 +441,10 @@ Images are plumbed from Telegram through to the LLM via a neutral internal forma
 
 LLM output (standard Markdown) is converted to Telegram-compatible HTML via `src/libs/formatReply.js`:
 
-- Uses `marked` to render standard Markdown → HTML
+- Pre-processes ` ```table ` fenced blocks: parses CSV content, renders via `gajus/table` (Unicode box-drawing), wraps in `<pre>`; falls back to raw block on parse error
+- Uses `marked` to render remaining Markdown → HTML
 - Post-processes to replace unsupported tags (`<strong>→<b>`, `<em>→<i>`, `<h1-6>→<b>`, `<li>→•`, etc.)
 - Strips any remaining tags not supported by Telegram
 - Falls back to plain text if Telegram rejects the HTML
+
+**Table format contract:** the LLM is instructed in `BOT.md` to output all tabular data as CSV inside a ` ```table ` fence (first row = header, comma-delimited, no commas inside cell values). `renderTableBlocks()` in `formatReply.js` intercepts these before `marked` runs. Bare Markdown table syntax (`| col |`) is explicitly forbidden in the prompt because Telegram strips it.
