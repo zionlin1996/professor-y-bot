@@ -136,21 +136,7 @@ yarn dev:db:generate && yarn db:migrate --name <migration-name>
 2. Set `DATABASE_URL=postgresql://user:pass@host:5432/dbname` as a CapRover env var
 3. `scripts/start.sh` runs `yarn prod:db:setup` (generate + migrate/push) before starting the app
 
-**npm scripts reference:**
-
-| Script                 | Action                                                       |
-| ---------------------- | ------------------------------------------------------------ |
-| `yarn setup:db`        | Auto-setup based on `NODE_ENV` (calls `scripts/setup-db.js`) |
-| `yarn dev:db:setup`    | Generate dev client + push SQLite schema                     |
-| `yarn dev:db:generate` | Generate Prisma client from `schema.dev.prisma`              |
-| `yarn dev:db:push`     | Push schema changes to SQLite (no migration file)            |
-| `yarn dev:db:studio`   | Open Prisma Studio for SQLite                                |
-| `yarn prod:db:setup`   | Generate prod client + push/migrate PostgreSQL schema        |
-| `yarn db:generate`     | Generate Prisma client from `schema.prisma`                  |
-| `yarn db:migrate`      | Create a dev migration                                       |
-| `yarn db:migrate:prod` | Deploy migrations in production                              |
-| `yarn db:studio`       | Open Prisma Studio for production DB                         |
-| `yarn clear-commands`  | Clear all registered bot commands from Telegram (see below)  |
+DB scripts (`dev:db:setup`, `dev:db:generate`, `dev:db:push`, `dev:db:studio`, `prod:db:setup`, `db:generate`, `db:migrate`, `db:migrate:prod`, `db:studio`) and `clear-commands` are defined in `package.json`.
 
 **`src/libs/db.js`** exports `getDb()` — returns a `PrismaClient` instance when `DATABASE_URL` is set, otherwise `null`. Always null-check before use.
 
@@ -213,19 +199,11 @@ Each bot interaction in a group starts a **new thread** with its own isolated co
 
 Thread management lives in `src/services/ThreadService.js`. A singleton `ThreadService` is registered in the DI container; `resolveOrCreate(incoming)` is called per message to set `this.current`:
 
-- `new ThreadService({ store, db, user })` — singleton service; `store`/`db`/`user` injected for testability
-- `threadService.resolveOrCreate(incoming)` — resolves thread by reply or creates a new one; for new PM threads sets `ephemeral = stealth && isPrivate`; returns the `Thread` or `null`
-- `threadService.appendPrompt(prompt)` — appends user message to history; ephemeral: tracks user `messageId → threadId` in Redis; regular: creates a `Message` row in DB (stores `messageId`)
-- `threadService.updateReply(replyMessageId, { replyModel })` — finalises the exchange after the bot reply is sent; ephemeral: serializes history to Redis + tracks bot reply `messageId → threadId` in Redis; regular: updates the pending `Message` row with `response`, `replyModel`, and `replyMessageId`
-- `threadService.resolve(replyToId)` — tries DB `Message.findFirst` by `messageId OR replyMessageId` first (regular); falls back to Redis `msgKey` lookup (ephemeral)
-- `threadService.load(threadId)` — loads regular thread history from DB `Message` rows; used by the archive route only; ephemeral threads have no `Message` rows and intentionally return empty → 404
-- `thread.ephemeral` — boolean set at creation time; drives all storage branching in `appendPrompt` and `updateReply`; stealth toggle mid-conversation does not change an existing thread's ephemeral flag
-- `thread.append(role, content)` — pure method on the Thread data class; called by `LLMService.chat()` for the assistant reply
-- `thread.serialize()` — strips image blocks from history for Redis storage; image-only turns become `"[image]"`
-- `thread.toPublicUrl()` — returns the public archive URL (`EXTERNAL_URL/archive/{thread.id}`)
-- All Redis keys use a rolling 7-day TTL (managed by `src/libs/store.js`); ephemeral thread history expires after 7 days; regular threads resolve via DB indefinitely
-- The system prompt is assembled from ordered `.md` files in `src/llm/prompts/` (see below); `LLM_SYSTEM_PROMPT` env var appends extra instructions after them
-- Each user message is prefixed so the LLM can distinguish speakers: `@handle: ` when the sender has a Telegram username, or `FirstName (id:XXXXXXXX): ` when they do not — the numeric ID can be passed to `get_user_profile` as `userId` for cross-user profile lookups
+Key API: `resolveOrCreate(incoming)` creates or continues a thread; `appendPrompt(prompt)` appends user message (ephemeral → Redis, regular → DB `Message` row); `updateReply(replyMessageId, { replyModel })` finalises the exchange; `resolve(replyToId)` looks up thread by message ID (DB first, Redis fallback); `load(threadId)` loads history for the archive route (ephemeral threads return empty → 404).
+
+- `thread.ephemeral` — set at creation (`stealth && isPrivate`); drives all storage branching; immutable mid-conversation
+- Speaker prefix: `@handle: ` (with username) or `FirstName (id:XXXXXXXX): ` (without) — numeric ID usable with `get_user_profile`
+- Redis TTL: 7-day rolling on all keys; regular threads resolve via DB indefinitely
 
 ## System prompt files
 
@@ -289,6 +267,8 @@ The default system prompt is assembled in `src/services/LLMService.js` by loadin
 
 `up_e:`/`up_i:` are handled before the model-switching guard — the callback handler loads the actor via `userService.loadFrom({ userId })` and checks `current.isAdmin` (`permissionLevel === 0`). The `/model` callbacks use the same check.
 
+Command handlers and the callback handler live in `index.js`, registered via `bot.onCommand(SLASH_COMMANDS.X, async (incoming, services) => {...})` and `bot.onCallback(...)`. Guard return values: `null` = pass, `""` = silent drop, non-empty string = send as error reply and stop.
+
 ## Keyword filters
 
 Keyword filters are a separate concept from actions. They are hardcoded string patterns checked before any action handling — if a message matches, the pipeline stops immediately with no reply and no handler runs.
@@ -296,31 +276,6 @@ Keyword filters are a separate concept from actions. They are hardcoded string p
 | Keyword  | Effect                                               |
 | -------- | ---------------------------------------------------- |
 | `白爛+1` | Message silently dropped; pipeline stops immediately |
-
-## Bot commands
-
-`IncomingMessage._parseCommand()` detects bot commands via `msg.entities` (entity type `bot_command` at offset 0) and exposes `incoming.isCommand` and `incoming.command`. `EnhancedBot` handles dispatch: when `incoming.isCommand` is true it calls the matching handler registered via `bot.onCommand()`; if none matches, the message falls through to `handleMessage`.
-
-All command handlers and the callback handler live directly in `index.js`, registered via `bot.onCommand(SLASH_COMMANDS.X, async (incoming, services) => {...})` and `bot.onCallback(async (query, services) => {...})`. All commands are PM-only — each handler guards with `if (incoming.isGroup) return` at the top. Admin checks use `userService.current.isAdmin` after calling `userService.loadFrom(incoming)`. User existence and DB availability are checked via `profileGuard` from `src/libs/bot/guards/profile.js`. PM-only enforcement uses `pmOnly` from `src/libs/bot/guards/pm-only.js`. Guard return values: `null` = pass, `""` = silent drop (no message sent), non-empty string = send as error reply and stop.
-
-Adding a new command: add the key to `SLASH_COMMANDS` in `src/constants/commands.js` (auto-registered at startup), add a `{ command, description }` entry to `BOT_COMMANDS` (Telegram display), and add a `bot.onCommand(SLASH_COMMANDS.X, ...)` handler in `index.js`.
-
-**Handler signature:**
-
-```js
-bot.onCommand(SLASH_COMMANDS.MYCOMMAND, async (incoming, services) => {
-  if (incoming.isGroup) return;
-  // ...
-});
-```
-
-| Command              | Response                                                                                       |
-| -------------------- | ---------------------------------------------------------------------------------------------- |
-| `/start`             | Creates a new profile row (`id`, `username`); if already exists, confirms and points to `/me`  |
-| `/model`             | Shows current AI model; admin can switch provider and model via inline keyboard                |
-| `/me`                | Shows the user's profile notes from DB, or a "no record" message if none exists                |
-| `/forget`            | Clears the user's profile notes field (row kept); confirms success or reports nothing to clear |
-| `/stealth [on\|off]` | Toggle stealth mode; returns "run /start first" if no profile exists                           |
 
 ## Dynamic model switching
 
