@@ -53,6 +53,8 @@ src/
       claude.js               ← Anthropic Claude backend
       gemini.js               ← Google Gemini backend
       lumo.js                 ← Lumo (Proton) backend
+    extensions/
+      baki-memes.json         ← 514 Baki meme entries (caption + imgur URL) used by the !baki inline action
     tools/
       remind.js               ← schedule_reminder tool definition + executor (shared across backends)
       fetch-url.js            ← fetch_url tool: fetches a URL via Jina Reader and returns markdown content
@@ -248,10 +250,11 @@ The default system prompt is assembled in `src/services/LLMService.js` by loadin
 
 **Inline actions:**
 
-| Token      | Effect                                                                           |
-| ---------- | -------------------------------------------------------------------------------- |
-| `!noreply` | Suppresses the LLM — no reply is sent                                            |
-| `!info`    | Appends model name, thread ID, and archive link to the bottom of the bot's reply |
+| Token              | Effect                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| `!noreply`         | Suppresses the LLM — no reply is sent                                                            |
+| `!info`            | Appends model name, thread ID, and archive link to the bottom of the bot's reply                 |
+| `!baki <desc>`     | Finds the best matching Baki meme panel for the description and sends it as a photo; no LLM chat |
 
 **Menu actions:** none currently.
 
@@ -328,6 +331,18 @@ The bot recommends restaurants for breakfast, lunch, or dinner based on the user
 - **Implementation**: `src/llm/tools/recommend-meal.js` — calls Google Places Text Search with `limit: 20`, applies Fisher-Yates shuffle in-place, returns the top 3 results formatted with `formatPlaceResult` (re-exported from `search-map.js`)
 - **Requires**: `GOOGLE_MAPS_API_KEY` env var (same key as `search_map`); returns an error string to the LLM if unset
 - **Tool guidance**: `src/llm/prompts/TOOLS.md` contains full LLM orchestration instructions including the genre pool tables and post-recommendation flow
+
+## Baki meme lookup (`!baki`)
+
+Users can retrieve a Baki manga meme panel by description using the `!baki <description>` inline action.
+
+- **Trigger**: `!baki <description>` anywhere in a message (group or PM); works alongside `@mention` in groups
+- **Flow**: short-circuits the main LLM pipeline — no thread creation, no chat history; handled in `index.js` before user/thread loading
+- **Matching**: `findBestMatch(description, backend)` in `src/llm/tools/baki-lookup.js` passes all 514 captioned captions as a numbered list to the active LLM backend and asks for the best index (returns `0` if nothing fits); parses the integer response and returns the entry
+- **Output**: `bot.sendPhoto()` with the imgur URL — no text in the reply
+- **Error cases**: no description → asks user to add one; no match → tells user to try a different description; backend error → generic retry message
+- **Data source**: `src/llm/extensions/baki-memes.json` — 514 entries scraped from PTT C_Chat, organised into 10 character sections (德川, 勇次郎, 武藏, 烈海王, 獨步, 刃牙, 本部, 傑克/歐立巴/花山, 不分區角色, 不分區物品); each entry has `caption` (Chinese quote/label) and `url` (imgur)
+- **Index**: flat array of `{caption, url, section}` and the numbered caption string are both built once at `require()` time in `baki-lookup.js`
 
 ## GitHub source code lookup and write access
 
