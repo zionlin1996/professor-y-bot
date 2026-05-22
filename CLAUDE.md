@@ -255,6 +255,7 @@ The default system prompt is assembled in `src/services/LLMService.js` by loadin
 | `!noreply`         | Suppresses the LLM — no reply is sent                                                            |
 | `!info`            | Appends model name, thread ID, and archive link to the bottom of the bot's reply                 |
 | `!baki <desc>`     | Finds the best matching Baki meme panel for the description and sends it as a photo; no LLM chat |
+| `!mygo <desc>`     | Finds the best matching MyGO anime meme panel for the description and sends it as a photo; no LLM chat |
 
 **Menu actions:** none currently.
 
@@ -331,6 +332,19 @@ The bot recommends restaurants for breakfast, lunch, or dinner based on the user
 - **Implementation**: `src/llm/tools/recommend-meal.js` — calls Google Places Text Search with `limit: 20`, applies Fisher-Yates shuffle in-place, returns the top 3 results formatted with `formatPlaceResult` (re-exported from `search-map.js`)
 - **Requires**: `GOOGLE_MAPS_API_KEY` env var (same key as `search_map`); returns an error string to the LLM if unset
 - **Tool guidance**: `src/llm/prompts/TOOLS.md` contains full LLM orchestration instructions including the genre pool tables and post-recommendation flow
+
+## MyGO meme lookup (`!mygo`)
+
+Users can retrieve a MyGO anime meme panel by description using the `!mygo <description>` inline action.
+
+- **Trigger**: `!mygo <description>` anywhere in a message (group or PM); works alongside `@mention` in groups
+- **Flow**: short-circuits the main LLM pipeline — no thread creation, no chat history; handled in `index.js` before user/thread loading
+- **Matching**: `findBestMatch(description, backend)` in `src/llm/tools/mygo-lookup.js` passes all 1,255 captioned panels as a numbered list to the active LLM backend and asks for the best index (returns `0` if nothing fits); parses the integer response and returns the entry
+- **Output**: `bot.sendPhoto()` with the image URL — no text in the reply
+- **Error cases**: no description → asks user to add one; no match → tells user to try a different description; backend error → generic retry message
+- **Data source**: `src/llm/extensions/mygo-memes.json` — 1,255 entries scraped from mygo.miyago9267.com API, organised by character (愛音, 爽世, 立希, 祥子, 樂奈, 燈, 喵夢, 睦, 凜凜子, 初華, 海鈴, 無角色); each entry has `alt` (Chinese caption), `url` (image URL), `episode`, `tags`, `popularity`
+- **Index**: flat array and the numbered caption string are both built once at `require()` time in `mygo-lookup.js`
+- **Regeneration**: run `node scripts/scrape-mygo-memes.js` to re-scrape and refresh the JSON
 
 ## Baki meme lookup (`!baki`)
 

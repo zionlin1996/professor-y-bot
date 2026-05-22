@@ -10,6 +10,7 @@ const INLINE_COMMANDS = {
   NOREPLY: "!noreply",
   INFO: "!info",
   BAKI: "!baki",
+  MYGO: "!mygo",
 };
 
 /**

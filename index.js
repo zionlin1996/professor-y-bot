@@ -16,6 +16,7 @@ const formatReply = require("./src/libs/formatReply");
 const exportHtml = require("./src/libs/exportHtml");
 const formatInfo = require("./src/libs/formatInfo");
 const { findBestMatch: findBakiMatch } = require("./src/llm/tools/baki-lookup");
+const { findBestMatch: findMygoMatch } = require("./src/llm/tools/mygo-lookup");
 const {
   INLINE_COMMANDS,
   BOT_COMMANDS,
@@ -84,6 +85,42 @@ bot.onMessage(async (message, services) => {
         });
       } catch (err) {
         console.error("Baki lookup error:", err);
+        return bot.sendMessage(
+          message.chatId,
+          "查詢失敗，請再試一次。",
+          { reply_to_message_id: message.id },
+        );
+      }
+    }
+
+    if (message.inlineCommand(INLINE_COMMANDS.MYGO)) {
+      const description = message.mentionStrippedText.trim();
+      if (!description) {
+        return bot.sendMessage(
+          message.chatId,
+          "請加上描述。例如：<code>!mygo 愛音一臉嫌棄</code>",
+          { reply_to_message_id: message.id, parse_mode: "HTML" },
+        );
+      }
+      const llm = services.get("llm");
+      await llm.init();
+      try {
+        const match = await findMygoMatch(description, llm.backend);
+        if (!match) {
+          return bot.sendMessage(
+            message.chatId,
+            "找不到符合的MyGO圖，換個描述試試？",
+            { reply_to_message_id: message.id },
+          );
+        }
+        const imgRes = await fetch(match.url);
+        if (!imgRes.ok) throw new Error(`image fetch failed: ${imgRes.status}`);
+        const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
+        return bot.sendPhoto(message.chatId, imgBuffer, {
+          reply_to_message_id: message.id,
+        });
+      } catch (err) {
+        console.error("MyGO lookup error:", err);
         return bot.sendMessage(
           message.chatId,
           "查詢失敗，請再試一次。",
