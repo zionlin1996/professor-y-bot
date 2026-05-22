@@ -54,11 +54,15 @@ src/
       gemini.js               ← Google Gemini backend
       lumo.js                 ← Lumo (Proton) backend
     extensions/
-      baki-memes.json         ← 514 Baki meme entries (caption + imgur URL) used by the !baki inline action
+      baki-memes.json         ← 490 Baki meme entries as flat `{ caption: url }` pairs used by the !baki inline action
+      mygo-memes.json         ← 1,170 MyGO anime meme entries as flat `{ alt: url }` pairs used by the !mygo inline action
     tools/
       remind.js               ← schedule_reminder tool definition + executor (shared across backends)
       fetch-url.js            ← fetch_url tool: fetches a URL via Jina Reader and returns markdown content
       user-profile.js         ← get_user_profile / update_user_profile tools: read/write per-user Markdown notes in DB
+      meme-lookup.js          ← shared factory `createMemeLookup(data, label)` used by baki-lookup.js and mygo-lookup.js
+      baki-lookup.js          ← `!baki` lookup: wraps meme-lookup with baki-memes.json
+      mygo-lookup.js          ← `!mygo` lookup: wraps meme-lookup with mygo-memes.json
   libs/
     formatReply.js            ← converts LLM markdown output to Telegram HTML
     attachments.js            ← getLastImage() and toImageBlock() for image support
@@ -339,12 +343,11 @@ Users can retrieve a MyGO anime meme panel by description using the `!mygo <desc
 
 - **Trigger**: `!mygo <description>` anywhere in a message (group or PM); works alongside `@mention` in groups
 - **Flow**: short-circuits the main LLM pipeline — no thread creation, no chat history; handled in `index.js` before user/thread loading
-- **Matching**: `findBestMatch(description, backend)` in `src/llm/tools/mygo-lookup.js` passes all 1,255 captioned panels as a numbered list to the active LLM backend and asks for the best index (returns `0` if nothing fits); parses the integer response and returns the entry
+- **Matching**: `findBestMatch(description, backend)` in `src/llm/tools/mygo-lookup.js` passes all 1,170 captions as a numbered list to the active LLM backend and asks for the best index (returns `0` if nothing fits); parses the integer response and returns `{ caption, url }`
 - **Output**: `bot.sendPhoto()` with the image URL — no text in the reply
 - **Error cases**: no description → asks user to add one; no match → tells user to try a different description; backend error → generic retry message
-- **Data source**: `src/llm/extensions/mygo-memes.json` — 1,255 entries scraped from mygo.miyago9267.com API, organised by character (愛音, 爽世, 立希, 祥子, 樂奈, 燈, 喵夢, 睦, 凜凜子, 初華, 海鈴, 無角色); each entry has `alt` (Chinese caption), `url` (image URL), `episode`, `tags`, `popularity`
-- **Index**: flat array and the numbered caption string are both built once at `require()` time in `mygo-lookup.js`
-- **Regeneration**: run `node scripts/scrape-mygo-memes.js` to re-scrape and refresh the JSON
+- **Data source**: `src/llm/extensions/mygo-memes.json` — 1,170 entries scraped from mygo.miyago9267.com API, stored as flat `{ alt: url }` pairs (sections, episode, tags, popularity dropped)
+- **Regeneration**: run `node scripts/scrape-mygo-memes.js` to re-scrape and refresh the JSON; re-flatten via `Object.fromEntries` if needed
 
 ## Baki meme lookup (`!baki`)
 
@@ -352,11 +355,11 @@ Users can retrieve a Baki manga meme panel by description using the `!baki <desc
 
 - **Trigger**: `!baki <description>` anywhere in a message (group or PM); works alongside `@mention` in groups
 - **Flow**: short-circuits the main LLM pipeline — no thread creation, no chat history; handled in `index.js` before user/thread loading
-- **Matching**: `findBestMatch(description, backend)` in `src/llm/tools/baki-lookup.js` passes all 514 captioned captions as a numbered list to the active LLM backend and asks for the best index (returns `0` if nothing fits); parses the integer response and returns the entry
+- **Matching**: `findBestMatch(description, backend)` in `src/llm/tools/baki-lookup.js` passes all 490 captions as a numbered list to the active LLM backend and asks for the best index (returns `0` if nothing fits); parses the integer response and returns `{ caption, url }`
 - **Output**: `bot.sendPhoto()` with the imgur URL — no text in the reply
 - **Error cases**: no description → asks user to add one; no match → tells user to try a different description; backend error → generic retry message
-- **Data source**: `src/llm/extensions/baki-memes.json` — 514 entries scraped from PTT C_Chat, organised into 10 character sections (德川, 勇次郎, 武藏, 烈海王, 獨步, 刃牙, 本部, 傑克/歐立巴/花山, 不分區角色, 不分區物品); each entry has `caption` (Chinese quote/label) and `url` (imgur)
-- **Index**: flat array of `{caption, url, section}` and the numbered caption string are both built once at `require()` time in `baki-lookup.js`
+- **Data source**: `src/llm/extensions/baki-memes.json` — 490 entries scraped from PTT C_Chat, stored as flat `{ caption: url }` pairs (section grouping dropped; duplicates deduped)
+- **Shared factory**: both `baki-lookup.js` and `mygo-lookup.js` are thin wrappers over `src/llm/tools/meme-lookup.js` — `createMemeLookup(data, label)` builds the prompt and `findBestMatch` once at `require()` time; adding a new meme source requires only a new JSON file and a 3-line wrapper
 
 ## GitHub source code lookup and write access
 
