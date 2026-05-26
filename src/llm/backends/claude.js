@@ -36,10 +36,40 @@ class ClaudeBackend {
     });
   }
 
+  // Detect if text contains Cyrillic (Russian/Eastern European) characters
+  containsCyrillic(text) {
+    return /[\u0400-\u04FF]/.test(text);
+  }
+
+  // Detect primary language script in text
+  detectLanguageScript(text) {
+    const cyrillicCount = (text.match(/[\u0400-\u04FF]/g) || []).length;
+    const chineseCount = (text.match(/[\u4E00-\u9FFF\u3400-\u4DBF]/g) || []).length;
+    const latinCount = (text.match(/[a-zA-Z]/g) || []).length;
+
+    const total = cyrillicCount + chineseCount + latinCount;
+    if (total === 0) return null;
+
+    if (cyrillicCount > total * 0.2) return "cyrillic";
+    if (chineseCount > total * 0.2) return "chinese";
+    return "latin";
+  }
+
   async complete(messages, { chatId, userId, username } = {}) {
     const normalized = this.normalizeMessages(messages);
     const systemMessage = normalized.find((m) => m.role === "system");
     const conversationMessages = normalized.filter((m) => m.role !== "system");
+
+    // Infer expected language from the last user message
+    const lastUserMsg = conversationMessages
+      .slice()
+      .reverse()
+      .find((m) => m.role === "user");
+    const expectedLanguage = lastUserMsg ? this.detectLanguageScript(
+      typeof lastUserMsg.content === "string"
+        ? lastUserMsg.content
+        : lastUserMsg.content.find((b) => b.type === "text")?.text || ""
+    ) : null;
 
     const tools = [
       { type: "web_search_20250305", name: "web_search" },
@@ -158,11 +188,33 @@ class ClaudeBackend {
       response = await call(params);
     }
 
-    return response.content
+    let output = response.content
       .filter((b) => b.type === "text")
       .map((b) => b.text)
       .join("")
       .trim();
+
+    // Language validation: if Cyrillic detected but Chinese expected, or vice versa, reject
+    if (expectedLanguage === "chinese" && this.containsCyrillic(output)) {
+      console.warn(
+        "[ClaudeBackend] Language mismatch detected: Cyrillic output when Chinese was expected. Regenerating..."
+      );
+      // Force regeneration with explicit language instruction
+      params.messages.push({ role: "assistant", content: [{ type: "text", text: output }] });
+      params.messages.push({
+        role: "user",
+        content:
+          "ERROR: Your response contains the wrong language. The user is Chinese and you must respond ONLY in Traditional Chinese (繁體中文). Please regenerate your entire response in Traditional Chinese with no other language mixed in.",
+      });
+      response = await call(params);
+      output = response.content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("")
+        .trim();
+    }
+
+    return output;
   }
 
   async listModels() {
