@@ -13,6 +13,9 @@ const DEFAULT_SYSTEM_PROMPT = [
   loadPrompt("TOOLS.md"),
 ].join("\n\n");
 
+// Group-only: appended to the system prompt for group chats to enforce super-concise replies.
+const GROUP_CONCISE_PROMPT = loadPrompt("GROUP_CONCISE.md");
+
 const BACKENDS = {
   openai: () => require("../llm/backends/openai"),
   claude: () => require("../llm/backends/claude"),
@@ -107,6 +110,7 @@ class LLMService {
 
     const systemPrompt = [
       DEFAULT_SYSTEM_PROMPT,
+      incoming.isGroup ? GROUP_CONCISE_PROMPT : null,
       currentTime,
       process.env.LLM_SYSTEM_PROMPT,
     ]

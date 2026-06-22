@@ -217,13 +217,22 @@ The default system prompt is assembled in `src/services/LLMService.js` by loadin
 
 | File       | Purpose                                                                          |
 | ---------- | -------------------------------------------------------------------------------- |
-| `ROLE.md`  | Professor Y persona — identity, tone, language rules, immutable constraints      |
-| `BOT.md`   | Telegram-specific guidelines — response length, formatting, multi-user awareness |
-| `TOOLS.md` | Custom tool instructions — when and how to call each tool (always loaded)        |
+| `ROLE.md`          | Professor Y persona — identity, tone, language rules, immutable constraints      |
+| `BOT.md`           | Telegram-specific guidelines — response length, formatting, multi-user awareness |
+| `TOOLS.md`         | Custom tool instructions — when and how to call each tool (always loaded)        |
+| `GROUP_CONCISE.md` | Group-only super-concise reply rule — appended to the system prompt **only when `incoming.isGroup`** is true (see "Group concise mode") |
 
 **Adding a new prompt file:** create the `.md` file in `src/llm/prompts/` and add `loadPrompt("YOURFILE.md")` to the `DEFAULT_SYSTEM_PROMPT` array in `src/services/LLMService.js`. Order matters — earlier files take higher precedence.
 
 **Placeholder substitution:** use `%BOT_NAME%` anywhere in a prompt file; it will be replaced at load time with `TELEGRAM_BOT_USERNAME` from the environment.
+
+## Group concise mode
+
+In **group chats**, the bot replies in a super-concise style to avoid spamming the shared channel — by default a single sentence (hard cap ~2–3 short lines), no preamble, no restating the question.
+
+- **Implementation**: `GROUP_CONCISE.md` is loaded once at module load in `src/services/LLMService.js` (kept separate from `DEFAULT_SYSTEM_PROMPT`) and appended to the system prompt inside `chat()` **only when `incoming.isGroup` is true**. Private chats are unaffected.
+- **Precedence**: inserted after `DEFAULT_SYSTEM_PROMPT` but before `LLM_SYSTEM_PROMPT`, so an operator's `LLM_SYSTEM_PROMPT` can still override it.
+- **Elaborate exception**: the rule instructs the LLM to drop the length limit when the user explicitly asks to elaborate / explain in detail / wants the long version. Detection is left to the LLM (no keyword parsing), so it works across phrasings and languages.
 
 ## Git conventions
 
