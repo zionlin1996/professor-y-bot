@@ -48,7 +48,7 @@ async function toImageBlock(file) {
       gif: "image/gif",
       webp: "image/webp",
     }[ext] || "image/jpeg";
-  return { type: "image", mediaType, data: base64 };
+  return { type: "image", fileId: file.file_id, mediaType, data: base64 };
 }
 
 module.exports = { getLastImage, toImageBlock };

@@ -420,15 +420,19 @@ Images are plumbed from Telegram through to the LLM via a neutral internal forma
 
 1. `getLastImage(msg)` (`src/libs/attachments.js`) — extracts the largest photo size, image document, or sticker thumbnail from a Telegram message
 2. `targetAttachment = msgAttachment || replyAttachment` — current message photo takes priority over the replied-to message photo
-3. `toImageBlock(file)` (`src/libs/attachments.js`) — calls the Telegram API directly (no SDK) to resolve `file_id` → `file_path`, downloads the file, base64-encodes it, and returns a neutral block: `{ type: "image", mediaType, data }`; reads `TELEGRAM_BOT_TOKEN` from env
+3. `toImageBlock(file)` (`src/libs/attachments.js`) — calls the Telegram API directly (no SDK) to resolve `file_id` → `file_path`, downloads the file, base64-encodes it, and returns a neutral block: `{ type: "image", fileId, mediaType, data }`; reads `TELEGRAM_BOT_TOKEN` from env
 4. `userMessage` is built as a content array: `[{ type: "text", text }, imageBlock]`
 5. Each backend's `normalizeMessages()` translates the neutral block to its API format before the call
 
 **Neutral image block format** (stored in thread history):
 
 ```js
-{ type: "image", mediaType: "image/jpeg", data: "<base64>" }
+{ type: "image", fileId: "<telegram_file_id>", mediaType: "image/jpeg", data: "<base64>" }
 ```
+
+**Image persistence in thread history:** because base64 payloads are large, images are never stored verbatim in Redis or DB:
+- **Redis (ephemeral threads)**: `Thread.serialize()` replaces each image block with a compact `{ type: "image_ref", fileId, mediaType }`. On load, `ThreadService._expandHistory()` re-fetches the image via `toImageBlock({ file_id })` and restores the full block. Telegram `file_id`s are permanent — re-fetching always works.
+- **DB (regular threads)**: `attachmentFileId` and `attachmentMediaType` are stored on the `Message` row (text only in `content`). `ThreadService.load()` re-fetches the image via `toImageBlock` when reconstructing each message's content array.
 
 **Per-backend translation:**
 | Backend | Image block format |

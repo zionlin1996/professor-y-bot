@@ -1,4 +1,5 @@
 const { randomBytes } = require("crypto");
+const { toImageBlock } = require("../libs/attachments");
 
 const threadKey = (id) => `thread:${id}`;
 const msgKey = (id) => `msg:${id}`;
@@ -24,15 +25,21 @@ class Thread {
   }
 
   serialize() {
-    // Strip image blocks before writing to Redis to avoid storing large base64 payloads.
-    // Array content (text + image blocks) is collapsed to plain text; image-only turns become "[image]".
+    // Compact image blocks for Redis storage: replace base64 data with lightweight refs.
+    // image_ref carries fileId so the image can be re-fetched when the thread is loaded.
+    // Blocks without a fileId (shouldn't happen in practice) are dropped gracefully.
     return this.history.map((msg) => {
       if (!Array.isArray(msg.content)) return msg;
-      const text = msg.content
-        .filter((b) => b.type === "text")
-        .map((b) => b.text)
-        .join(" ");
-      return { ...msg, content: text || "[image]" };
+      const compacted = msg.content
+        .map((b) => {
+          if (b.type !== "image") return b;
+          return b.fileId
+            ? { type: "image_ref", fileId: b.fileId, mediaType: b.mediaType }
+            : null;
+        })
+        .filter(Boolean);
+      if (!compacted.length) return { ...msg, content: "[image]" };
+      return { ...msg, content: compacted };
     });
   }
 }
@@ -84,18 +91,30 @@ class ThreadService {
       where: { threadId },
       orderBy: { createdAt: "asc" },
     });
-    const history = messages.flatMap((m) => [
-      // TODO: DB only stores the stripped text, so image-only messages have content="".
-      // We fall back to a placeholder to avoid the "user messages must have non-empty content"
-      // error from the Claude API. Ideally we should re-fetch the image via attachmentFileId
-      // and reconstruct the full image block so the LLM retains visual context in long threads.
-      {
-        role: "user",
-        content: m.content || (m.attachmentFileId ? "[image]" : "[message]"),
-      },
-      ...(m.response ? [{ role: "assistant", content: m.response }] : []),
-    ]);
-    return new Thread(threadId, history);
+    const entries = await Promise.all(
+      messages.map(async (m) => {
+        let userContent;
+        if (m.attachmentFileId) {
+          try {
+            const imageBlock = await toImageBlock({
+              file_id: m.attachmentFileId,
+            });
+            userContent = m.content
+              ? [{ type: "text", text: m.content }, imageBlock]
+              : [imageBlock];
+          } catch {
+            userContent = m.content || "[image]";
+          }
+        } else {
+          userContent = m.content || "[message]";
+        }
+        return [
+          { role: "user", content: userContent },
+          ...(m.response ? [{ role: "assistant", content: m.response }] : []),
+        ];
+      })
+    );
+    return new Thread(threadId, entries.flat());
   }
 
   async resolve(replyToId) {
@@ -116,7 +135,24 @@ class ThreadService {
     const threadId = await this._store.get(msgKey(replyToId));
     if (!threadId) return null;
     const raw = await this._store.get(threadKey(threadId));
-    return new Thread(threadId, raw ? JSON.parse(raw) : [], true);
+    const serialized = raw ? JSON.parse(raw) : [];
+    const history = await Promise.all(
+      serialized.map(async (msg) => {
+        if (!Array.isArray(msg.content)) return msg;
+        const expanded = await Promise.all(
+          msg.content.map((b) => {
+            if (b.type !== "image_ref") return b;
+            try {
+              return toImageBlock({ file_id: b.fileId });
+            } catch {
+              return { type: "text", text: "[image]" };
+            }
+          })
+        );
+        return { ...msg, content: expanded };
+      })
+    );
+    return new Thread(threadId, history, true);
   }
 
   async resolveOrCreate(incoming) {
@@ -180,7 +216,7 @@ class ThreadService {
     if (thread.ephemeral) {
       await this._store.set(
         threadKey(thread.id),
-        JSON.stringify(thread.serialize()),
+        JSON.stringify(thread.serialize())
       );
       await this._store.set(msgKey(replyMessageId), thread.id);
       return;
