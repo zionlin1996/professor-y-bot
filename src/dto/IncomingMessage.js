@@ -82,10 +82,10 @@ class IncomingMessage {
     return `${name} (id:${id}): `
   }
 
-  /** Message text with @botUsername stripped. */
+  /** Message text with @botUsername replaced by "Professor Y". */
   get mentionStrippedText () {
     const botUsername = process.env.TELEGRAM_BOT_USERNAME
-    return this.text.replace(new RegExp(`@${botUsername}`, 'g'), '').trim()
+    return this.text.replace(new RegExp(`@${botUsername}`, 'gi'), 'Professor Y').trim()
   }
 
   /**
@@ -95,10 +95,13 @@ class IncomingMessage {
    */
   get quotedPrompt () {
     if (!this.replyToMessage) return this.mentionStrippedText
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME
     const originalText =
       this.replyToMessage.text || this.replyToMessage.caption || ''
     const replyContent = this.mentionStrippedText
-    return replyContent ? `> ${originalText}\n\n${replyContent}` : originalText
+    const hasExtraText =
+      this.text.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim() !== ''
+    return hasExtraText ? `> ${originalText}\n\n${replyContent}` : originalText
   }
 
   /** Current message attachment takes priority over replied-to attachment. */

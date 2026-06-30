@@ -252,21 +252,22 @@ describe('senderPrefix', () => {
 // ── mentionStrippedText ───────────────────────────────────────────────────────
 
 describe('mentionStrippedText', () => {
-  it('removes @botname from text', () => {
+  it('replaces @botname with "Professor Y"', () => {
     const msg = new IncomingMessage(makeMsg({ text: `@${BOT} what's up` }))
-    assert.equal(msg.mentionStrippedText, "what's up")
+    assert.equal(msg.mentionStrippedText, "Professor Y what's up")
   })
 
-  it('removes all occurrences of @botname', () => {
+  it('replaces all occurrences of @botname', () => {
     const msg = new IncomingMessage(
       makeMsg({ text: `@${BOT} hello @${BOT}` })
     )
     assert.ok(!msg.mentionStrippedText.includes(`@${BOT}`))
+    assert.ok(msg.mentionStrippedText.includes('Professor Y'))
   })
 
-  it('is empty string when only @botname in text', () => {
+  it('is "Professor Y" when only @botname in text', () => {
     const msg = new IncomingMessage(makeMsg({ text: `@${BOT}` }))
-    assert.equal(msg.mentionStrippedText, '')
+    assert.equal(msg.mentionStrippedText, 'Professor Y')
   })
 })
 
@@ -275,7 +276,7 @@ describe('mentionStrippedText', () => {
 describe('quotedPrompt', () => {
   it('returns mentionStrippedText when there is no reply', () => {
     const msg = new IncomingMessage(makeMsg({ text: `@${BOT} hi` }))
-    assert.equal(msg.quotedPrompt, 'hi')
+    assert.equal(msg.quotedPrompt, 'Professor Y hi')
   })
 
   it("formats reply as '> original\\n\\nreplyContent'", () => {
@@ -284,7 +285,7 @@ describe('quotedPrompt', () => {
       reply_to_message: { message_id: 5, text: 'original message' }
     })
     const msg = new IncomingMessage(raw)
-    assert.equal(msg.quotedPrompt, '> original message\n\nmy reply')
+    assert.equal(msg.quotedPrompt, '> original message\n\nProfessor Y my reply')
   })
 
   it('returns original text only when reply content is empty (just @mention)', () => {
@@ -302,7 +303,7 @@ describe('quotedPrompt', () => {
       reply_to_message: { message_id: 5, caption: 'photo caption' }
     })
     const msg = new IncomingMessage(raw)
-    assert.equal(msg.quotedPrompt, '> photo caption\n\ncomment')
+    assert.equal(msg.quotedPrompt, '> photo caption\n\nProfessor Y comment')
   })
 })
 

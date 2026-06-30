@@ -15,7 +15,7 @@ The bot activates in group chats whenever it is **@mentioned** — either in a r
 **Group trigger — mention inside a reply:**
 
 1. User replies to any message and includes `@botname` in the reply text
-2. Bot receives: `> [original message]\n\n[reply text without @mention]`
+2. Bot receives: `> [original message]\n\n[reply text with @mention replaced by "Professor Y"]`
 3. If the reply text is empty (just `@botname`), only the original message is sent as the prompt
 4. If the replied-to message contains an image, it is included in the prompt
 5. LLM response is formatted to Telegram HTML and sent as a reply
@@ -23,7 +23,7 @@ The bot activates in group chats whenever it is **@mentioned** — either in a r
 **Group trigger — direct mention (no reply):**
 
 1. User sends a message (optionally with an attached image) that includes `@botname`
-2. The whole message (minus the `@mention`) is sent as the prompt
+2. The whole message (with `@mention` replaced by "Professor Y") is sent as the prompt
 3. LLM response is formatted to Telegram HTML and sent as a reply
 
 **Conversation history** is per thread. Each new `@mention` starts a fresh thread with a random ID; replies to any message in the thread continue it regardless of who sends them. Multiple users can share a thread — each message is prefixed with `@username:` so the LLM can distinguish speakers.
