@@ -1,30 +1,30 @@
-const { toImageBlock } = require("../libs/attachments");
-const Prompt = require("../dto/Prompt");
+const { toImageBlock } = require('../libs/attachments')
+const Prompt = require('../dto/Prompt')
 
 const GUEST_USER = {
   isRestricted: true,
   isGuest: true,
   isAdmin: false,
   stealth: false,
-  permissionLevel: null,
-};
+  permissionLevel: null
+}
 
 class UserService {
-  constructor({ db } = {}) {
-    this._db = db;
-    this.current = null;
-    this.incoming = null;
+  constructor ({ db } = {}) {
+    this._db = db
+    this.current = null
+    this.incoming = null
   }
 
-  async loadFrom(incoming) {
-    this.incoming = incoming;
-    if (!this._db || !incoming.userId) throw new Error("Corrupted user data");
+  async loadFrom (incoming) {
+    this.incoming = incoming
+    if (!this._db || !incoming.userId) throw new Error('Corrupted user data')
     const profile = await this._db.userProfile.findUnique({
-      where: { id: incoming.userId },
-    });
+      where: { id: incoming.userId }
+    })
     if (!profile) {
-      this.current = GUEST_USER;
-      return this.current;
+      this.current = GUEST_USER
+      return this.current
     }
     this.current = {
       ...profile,
@@ -32,9 +32,9 @@ class UserService {
       isGuest: false,
       isAdmin: profile.permissionLevel === 0,
       isRestricted:
-        profile.permissionLevel === null || profile.permissionLevel === 1,
-    };
-    return this.current;
+        profile.permissionLevel === null || profile.permissionLevel === 1
+    }
+    return this.current
   }
 
   /**
@@ -42,37 +42,36 @@ class UserService {
    * Strips the bot mention, resolves any image attachment, and assembles
    * both the clean DB text and the LLM-ready content with sender prefix.
    */
-  async createPrompt() {
-    if (!this.incoming)
-      throw new Error("Call loadFrom() before createPrompt()");
-    const incoming = this.incoming;
+  async createPrompt () {
+    if (!this.incoming) { throw new Error('Call loadFrom() before createPrompt()') }
+    const incoming = this.incoming
 
     // text: stored in DB — mention stripped, no sender prefix
-    const dbText = incoming.mentionStrippedText;
+    const dbText = incoming.mentionStrippedText
     // llmText: sent to the LLM — includes quoted reply context when starting a new thread
-    const llmText = incoming.quotedPrompt;
+    const llmText = incoming.quotedPrompt
 
-    let imageBlock = null;
-    let attachment = null;
-    const telegramFile = incoming.targetAttachment;
+    let imageBlock = null
+    let attachment = null
+    const telegramFile = incoming.targetAttachment
     if (telegramFile) {
-      imageBlock = await toImageBlock(telegramFile);
+      imageBlock = await toImageBlock(telegramFile)
       attachment = {
         fileId: telegramFile.file_id,
-        mediaType: imageBlock.mediaType,
-      };
+        mediaType: imageBlock.mediaType
+      }
     }
 
     const displayText =
-      llmText || (imageBlock ? "What is in this image?" : null);
-    let content = null;
+      llmText || (imageBlock ? 'What is in this image?' : null)
+    let content = null
     if (imageBlock) {
       content = [
-        { type: "text", text: incoming.senderPrefix + displayText },
-        imageBlock,
-      ];
+        { type: 'text', text: incoming.senderPrefix + displayText },
+        imageBlock
+      ]
     } else if (displayText) {
-      content = incoming.senderPrefix + displayText;
+      content = incoming.senderPrefix + displayText
     }
 
     return new Prompt({
@@ -81,9 +80,9 @@ class UserService {
       attachment,
       userId: this.current.id,
       username: incoming.username,
-      messageId: String(incoming.id),
-    });
+      messageId: String(incoming.id)
+    })
   }
 }
 
-module.exports = UserService;
+module.exports = UserService

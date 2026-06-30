@@ -10,19 +10,19 @@
  * messageId — Telegram message ID string (for DB-native thread resolution)
  */
 class Prompt {
-  constructor({ text, content, attachment, userId, username, messageId }) {
-    this.text = text;
-    this.content = content;
-    this.attachment = attachment;
-    this.userId = userId;
-    this.username = username;
-    this.messageId = messageId;
+  constructor ({ text, content, attachment, userId, username, messageId }) {
+    this.text = text
+    this.content = content
+    this.attachment = attachment
+    this.userId = userId
+    this.username = username
+    this.messageId = messageId
   }
 
   /** True when there is nothing to send to the LLM. */
-  get isEmpty() {
-    return !this.content && !this.attachment;
+  get isEmpty () {
+    return !this.content && !this.attachment
   }
 }
 
-module.exports = Prompt;
+module.exports = Prompt

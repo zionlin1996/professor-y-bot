@@ -1,117 +1,117 @@
-const { getDb } = require("../../libs/db");
+const { getDb } = require('../../libs/db')
 
 // Only register these tools when a database is configured.
 // Profiles are keyed by Telegram userId (stored as `id`) — stable across username changes.
 // The optional username field is stored for display and cross-user lookup only.
-const enabled = !!process.env.DATABASE_URL;
+const enabled = !!process.env.DATABASE_URL
 
 const getDefinition = {
-  name: "get_user_profile",
+  name: 'get_user_profile',
   description:
-    "Retrieve the persistent Markdown profile notes for a user. " +
+    'Retrieve the persistent Markdown profile notes for a user. ' +
     "Omit both 'username' and 'userId' to fetch the current user's profile. " +
     "Pass 'username' (without @) to look up a user who has a Telegram handle. " +
     "Pass 'userId' (the numeric id shown in the sender prefix as 'id:XXXXXXXX') to look up a user who has no Telegram handle. " +
-    "Returns three possible states: NOT_REGISTERED (no record exists), EMPTY_PROFILE (registered but no notes saved), or the notes themselves.",
+    'Returns three possible states: NOT_REGISTERED (no record exists), EMPTY_PROFILE (registered but no notes saved), or the notes themselves.',
   parameters: {
-    type: "object",
+    type: 'object',
     properties: {
       username: {
-        type: "string",
+        type: 'string',
         description:
-          "The Telegram username (without @) of the user to look up. Use this when the sender prefix shows '@handle:'.",
+          "The Telegram username (without @) of the user to look up. Use this when the sender prefix shows '@handle:'."
       },
       userId: {
-        type: "string",
+        type: 'string',
         description:
-          "The numeric Telegram user ID of the user to look up. Use this when the sender prefix shows 'Name (id:XXXXXXXX):' — i.e. the user has no Telegram handle.",
-      },
+          "The numeric Telegram user ID of the user to look up. Use this when the sender prefix shows 'Name (id:XXXXXXXX):' — i.e. the user has no Telegram handle."
+      }
     },
-    required: [],
-  },
-};
+    required: []
+  }
+}
 
 const updateDefinition = {
-  name: "update_user_profile",
-  description: "Save updated Markdown profile notes for the current user.",
+  name: 'update_user_profile',
+  description: 'Save updated Markdown profile notes for the current user.',
   parameters: {
-    type: "object",
+    type: 'object',
     properties: {
       notes: {
-        type: "string",
+        type: 'string',
         description:
-          "The full updated Markdown profile text. Use bullet points grouped by topic. Example:\n- Name: prefers 'Alex'\n- Language: English\n- Interests: climbing, coffee",
-      },
+          "The full updated Markdown profile text. Use bullet points grouped by topic. Example:\n- Name: prefers 'Alex'\n- Language: English\n- Interests: climbing, coffee"
+      }
     },
-    required: ["notes"],
-  },
-};
+    required: ['notes']
+  }
+}
 
 /**
  * @param {object} args
  * @param {{ chatId: number, userId: number, username?: string }} context
- * 
+ *
  * Returns one of three states:
  * - "NOT_REGISTERED:..." if user has never run /start
  * - "EMPTY_PROFILE:..." if user is registered but has no notes saved
  * - The notes themselves if they exist
  */
-async function getProfile({ username: targetUsername, userId: targetUserId } = {}, { userId: currentUserId, username: currentUsername } = {}) {
-  const db = getDb();
-  if (!db) return "Database not available.";
+async function getProfile ({ username: targetUsername, userId: targetUserId } = {}, { userId: currentUserId, username: currentUsername } = {}) {
+  const db = getDb()
+  if (!db) return 'Database not available.'
 
   if (targetUsername) {
     // Cross-user lookup by Telegram handle
-    const record = await db.userProfile.findUnique({ where: { username: targetUsername } });
+    const record = await db.userProfile.findUnique({ where: { username: targetUsername } })
     if (!record) {
-      return `NOT_REGISTERED: @${targetUsername} has not run /start yet.`;
+      return `NOT_REGISTERED: @${targetUsername} has not run /start yet.`
     }
-    if (!record.notes || record.notes.trim() === "") {
-      return `EMPTY_PROFILE: @${targetUsername} is registered but has no notes saved yet.`;
+    if (!record.notes || record.notes.trim() === '') {
+      return `EMPTY_PROFILE: @${targetUsername} is registered but has no notes saved yet.`
     }
-    return record.notes;
+    return record.notes
   }
 
   if (targetUserId) {
     // Cross-user lookup by numeric userId (for users without a Telegram handle)
-    const record = await db.userProfile.findUnique({ where: { id: String(targetUserId) } });
+    const record = await db.userProfile.findUnique({ where: { id: String(targetUserId) } })
     if (!record) {
-      return `NOT_REGISTERED: User (id:${targetUserId}) has not run /start yet.`;
+      return `NOT_REGISTERED: User (id:${targetUserId}) has not run /start yet.`
     }
-    if (!record.notes || record.notes.trim() === "") {
-      return `EMPTY_PROFILE: User (id:${targetUserId}) is registered but has no notes saved yet.`;
+    if (!record.notes || record.notes.trim() === '') {
+      return `EMPTY_PROFILE: User (id:${targetUserId}) is registered but has no notes saved yet.`
     }
-    return record.notes;
+    return record.notes
   }
 
-  if (!currentUserId) return "User identity unavailable.";
-  const record = await db.userProfile.findUnique({ where: { id: String(currentUserId) } });
+  if (!currentUserId) return 'User identity unavailable.'
+  const record = await db.userProfile.findUnique({ where: { id: String(currentUserId) } })
 
   if (!record) {
-    return `NOT_REGISTERED: ${currentUsername ? `@${currentUsername}` : "You"} has not run /start yet.`;
+    return `NOT_REGISTERED: ${currentUsername ? `@${currentUsername}` : 'You'} has not run /start yet.`
   }
-  if (!record.notes || record.notes.trim() === "") {
-    return `EMPTY_PROFILE: ${currentUsername ? `@${currentUsername}` : "You"} is registered but has no notes saved yet.`;
+  if (!record.notes || record.notes.trim() === '') {
+    return `EMPTY_PROFILE: ${currentUsername ? `@${currentUsername}` : 'You'} is registered but has no notes saved yet.`
   }
-  return record.notes;
+  return record.notes
 }
 
 /**
  * @param {{ notes: string }} args
  * @param {{ chatId: number, userId: number, username?: string }} context
  */
-async function updateProfile({ notes }, { userId: currentUserId } = {}) {
-  const db = getDb();
-  if (!db) return "Database not available.";
-  if (!currentUserId) return "User identity unavailable.";
+async function updateProfile ({ notes }, { userId: currentUserId } = {}) {
+  const db = getDb()
+  if (!db) return 'Database not available.'
+  if (!currentUserId) return 'User identity unavailable.'
 
   const { count } = await db.userProfile.updateMany({
     where: { id: String(currentUserId) },
-    data: { notes },
-  });
+    data: { notes }
+  })
 
-  if (count === 0) return "No profile found — ask the user to run /start first before I can save notes for them.";
-  return "Profile updated successfully.";
+  if (count === 0) return 'No profile found — ask the user to run /start first before I can save notes for them.'
+  return 'Profile updated successfully.'
 }
 
 module.exports = {
@@ -119,5 +119,5 @@ module.exports = {
   getDefinition,
   updateDefinition,
   getProfile,
-  updateProfile,
-};
+  updateProfile
+}

@@ -7,24 +7,24 @@
  * @param {"html"|"plain"} [opts.format="html"]
  * @returns {string}
  */
-const DIVIDER = "─────────────────────";
+const DIVIDER = '─────────────────────'
 
-function formatInfo(llm, thread, { format = "html" } = {}) {
-  const archiveUrl = thread.toPublicUrl();
+function formatInfo (llm, thread, { format = 'html' } = {}) {
+  const archiveUrl = thread.toPublicUrl()
   const link =
-    format === "html"
+    format === 'html'
       ? `<a href="${archiveUrl}">${archiveUrl}</a>`
-      : archiveUrl;
+      : archiveUrl
 
   return [
-    "",
-    "",
+    '',
+    '',
     DIVIDER,
     `Model: ${llm.providerInfo()}`,
     `Thread Id: ${thread.id}`,
     `Link: ${link}`,
-    DIVIDER,
-  ].join("\n");
+    DIVIDER
+  ].join('\n')
 }
 
-module.exports = formatInfo;
+module.exports = formatInfo

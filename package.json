@@ -18,7 +18,10 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:prod": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "clear-commands": "node scripts/clear-commands.js"
+    "lint": "standard",
+    "lint:fix": "standard --fix",
+    "clear-commands": "node scripts/clear-commands.js",
+    "prepare": "husky"
   },
   "keywords": [
     "telegram",
@@ -48,10 +51,16 @@
     "undici": "^7.0.0"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "16.4.0",
     "nodemon": "^3.0.2",
-    "prisma": "^6.13.0"
+    "prisma": "^6.13.0",
+    "standard": "^17.1.2"
   },
   "engines": {
     "node": ">=20.18.1"
+  },
+  "lint-staged": {
+    "*.js": "standard"
   }
 }

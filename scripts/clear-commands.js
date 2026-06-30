@@ -11,47 +11,47 @@
  *   node scripts/clear-commands.js
  */
 
-require("dotenv").config();
+require('dotenv').config()
 
-const token = process.env.TELEGRAM_BOT_TOKEN;
+const token = process.env.TELEGRAM_BOT_TOKEN
 if (!token) {
-  console.error("Error: TELEGRAM_BOT_TOKEN is not set.");
-  process.exit(1);
+  console.error('Error: TELEGRAM_BOT_TOKEN is not set.')
+  process.exit(1)
 }
 
-async function main() {
-  const base = `https://api.telegram.org/bot${token}`;
+async function main () {
+  const base = `https://api.telegram.org/bot${token}`
 
   // 1. Show what's currently registered
-  const getRes = await fetch(`${base}/getMyCommands`);
-  const getCurrent = await getRes.json();
-  console.log("Current commands:", JSON.stringify(getCurrent.result, null, 2));
+  const getRes = await fetch(`${base}/getMyCommands`)
+  const getCurrent = await getRes.json()
+  console.log('Current commands:', JSON.stringify(getCurrent.result, null, 2))
 
   // 2. Delete all scopes
   const scopes = [
-    { scope: { type: "default" } },
-    { scope: { type: "all_private_chats" } },
-    { scope: { type: "all_group_chats" } },
-    { scope: { type: "all_chat_administrators" } },
-  ];
+    { scope: { type: 'default' } },
+    { scope: { type: 'all_private_chats' } },
+    { scope: { type: 'all_group_chats' } },
+    { scope: { type: 'all_chat_administrators' } }
+  ]
 
   for (const payload of scopes) {
     const res = await fetch(`${base}/deleteMyCommands`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const json = await res.json();
-    console.log(`deleteMyCommands (${payload.scope.type}):`, json.ok ? "ok" : json);
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    const json = await res.json()
+    console.log(`deleteMyCommands (${payload.scope.type}):`, json.ok ? 'ok' : json)
   }
 
   // 3. Confirm cleared
-  const confirmRes = await fetch(`${base}/getMyCommands`);
-  const confirmJson = await confirmRes.json();
-  console.log("Commands after clearing:", JSON.stringify(confirmJson.result, null, 2));
+  const confirmRes = await fetch(`${base}/getMyCommands`)
+  const confirmJson = await confirmRes.json()
+  console.log('Commands after clearing:', JSON.stringify(confirmJson.result, null, 2))
 }
 
 main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+  console.error(err)
+  process.exit(1)
+})

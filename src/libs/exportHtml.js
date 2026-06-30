@@ -1,52 +1,52 @@
-const { marked } = require("marked");
+const { marked } = require('marked')
 
-function escapeHtml(str) {
+function escapeHtml (str) {
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
 // Extract the @username prefix that index.js prepends to every user message.
-function parseUserMessage(content) {
+function parseUserMessage (content) {
   const text =
-    typeof content === "string"
+    typeof content === 'string'
       ? content
       : content
-          .filter?.((b) => b.type === "text")
-          .map((b) => b.text)
-          .join(" ") || "[image]";
-  const match = text.match(/^@(\S+): ([\s\S]*)$/);
+        .filter?.((b) => b.type === 'text')
+        .map((b) => b.text)
+        .join(' ') || '[image]'
+  const match = text.match(/^@(\S+): ([\s\S]*)$/)
   return match
     ? { sender: `@${match[1]}`, body: match[2] }
-    : { sender: "User", body: text };
+    : { sender: 'User', body: text }
 }
 
-function renderBubble(role, content) {
-  if (role === "assistant") {
-    return marked.parse(typeof content === "string" ? content : "");
+function renderBubble (role, content) {
+  if (role === 'assistant') {
+    return marked.parse(typeof content === 'string' ? content : '')
   }
-  const { body } = parseUserMessage(content);
-  return `<p>${escapeHtml(body).replace(/\n/g, "<br>")}</p>`;
+  const { body } = parseUserMessage(content)
+  return `<p>${escapeHtml(body).replace(/\n/g, '<br>')}</p>`
 }
 
-function exportHtml(history, botName) {
-  const exportedAt = new Date().toLocaleString();
+function exportHtml (history, botName) {
+  const exportedAt = new Date().toLocaleString()
 
   const messagesHtml = history
     .map((msg) => {
-      const isUser = msg.role === "user";
+      const isUser = msg.role === 'user'
       const sender = isUser
         ? parseUserMessage(msg.content).sender
-        : botName || "Assistant";
-      const bubble = renderBubble(msg.role, msg.content);
-      return `    <div class="message ${isUser ? "user" : "assistant"}">
+        : botName || 'Assistant'
+      const bubble = renderBubble(msg.role, msg.content)
+      return `    <div class="message ${isUser ? 'user' : 'assistant'}">
       <div class="sender">${escapeHtml(sender)}</div>
       <div class="bubble">${bubble}</div>
-    </div>`;
+    </div>`
     })
-    .join("\n");
+    .join('\n')
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -135,7 +135,7 @@ ${messagesHtml}
     </div>
   </div>
 </body>
-</html>`;
+</html>`
 }
 
-module.exports = exportHtml;
+module.exports = exportHtml
