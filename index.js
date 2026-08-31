@@ -25,6 +25,8 @@ const {
 const startSubscriber = require('./src/libs/subscriber')
 const profileGuard = require('./src/libs/bot/guards/profile')
 const pmOnly = require('./src/libs/bot/guards/pm-only')
+const AsyncLock = require('async-lock')
+const threadLock = new AsyncLock()
 
 function backendRows (names) {
   const rows = []
@@ -118,40 +120,52 @@ bot.onMessage(async (message, services) => {
     const user = userService.current
     if (message.isPrivate && user.isRestricted) { return bot.sendMessage(chatId, 'Access denied.') }
 
-    // Resolve the thread context with the message data
-    const thread = await threadService.resolveOrCreate(message)
-    // Incoming message is not in a valid thread context, ignore it
-    if (!thread) return
+    // Serialize the whole exchange per thread: two replies racing into the
+    // same thread must not interleave their resolve/append/chat/update steps,
+    // or the LLM sees a half-written history and later writes clobber it.
+    const lockKey = await threadService.lockKeyFor(message)
+    const runExchange = async () => {
+      // Resolve the thread context with the message data
+      const thread = await threadService.resolveOrCreate(message)
+      // Incoming message is not in a valid thread context, ignore it
+      if (!thread) return
 
-    // Create the prompt for the LLM
-    const prompt = await userService.createPrompt()
-    if (prompt.isEmpty) return
+      // Create the prompt for the LLM
+      const prompt = await userService.createPrompt()
+      if (prompt.isEmpty) return
 
-    // Start processing prompt, send typing action to the user
-    await bot.sendChatAction(chatId, 'typing')
+      // Start processing prompt, send typing action to the user
+      await bot.sendChatAction(chatId, 'typing')
 
-    await threadService.appendPrompt(prompt)
+      await threadService.appendPrompt(prompt)
 
-    const llm = services.get('llm')
-    const reply = await llm.chat(thread, message)
+      const llm = services.get('llm')
+      const reply = await llm.chat(thread, message)
 
-    const replyOptions = { reply_to_message_id: message.id }
-    const showInfo = message.inlineCommand(INLINE_COMMANDS.INFO)
-    let sentMsg
-    try {
-      const info = showInfo ? formatInfo(llm, thread) : ''
-      sentMsg = await bot.sendMessage(chatId, formatReply(reply) + info, {
-        ...replyOptions,
-        parse_mode: 'HTML'
+      const replyOptions = { reply_to_message_id: message.id }
+      const showInfo = message.inlineCommand(INLINE_COMMANDS.INFO)
+      let sentMsg
+      try {
+        const info = showInfo ? formatInfo(llm, thread) : ''
+        sentMsg = await bot.sendMessage(chatId, formatReply(reply) + info, {
+          ...replyOptions,
+          parse_mode: 'HTML'
+        })
+      } catch {
+        const info = showInfo ? formatInfo(llm, thread, { format: 'plain' }) : ''
+        sentMsg = await bot.sendMessage(chatId, reply + info, replyOptions)
+      }
+
+      await threadService.updateReply(sentMsg.message_id, {
+        replyModel: llm.providerInfo()
       })
-    } catch {
-      const info = showInfo ? formatInfo(llm, thread, { format: 'plain' }) : ''
-      sentMsg = await bot.sendMessage(chatId, reply + info, replyOptions)
     }
 
-    await threadService.updateReply(sentMsg.message_id, {
-      replyModel: llm.providerInfo()
-    })
+    if (lockKey) {
+      await threadLock.acquire(lockKey, runExchange)
+    } else {
+      await runExchange()
+    }
   } catch (error) {
     console.error('Error handling message:', error)
     await bot.sendMessage(

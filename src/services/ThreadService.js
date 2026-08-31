@@ -64,6 +64,8 @@ class ThreadService {
     this._pendingMessageId = null
     /** The resolved/created Thread for this request. Set by resolveOrCreate(). */
     this.current = null
+    /** Memoizes _findThreadId() per replyToId — lockKeyFor() and resolve() both call it for the same incoming message. */
+    this._threadIdCache = new Map()
   }
 
   // ---------------------------------------------------------------------------
@@ -117,8 +119,17 @@ class ThreadService {
     return new Thread(threadId, entries.flat())
   }
 
-  async resolve (replyToId) {
-    // Non-ephemeral: find via DB Message record (messageId or replyMessageId).
+  /**
+   * Cheap lookup of which thread a replyToId belongs to, without loading
+   * full history. Used both by resolve() and by lockKeyFor(), which are
+   * both called for the same incoming message — memoized so the DB/Redis
+   * lookup runs once per request rather than twice.
+   */
+  async _findThreadId (replyToId) {
+    const cacheKey = String(replyToId)
+    if (this._threadIdCache.has(cacheKey)) return this._threadIdCache.get(cacheKey)
+
+    let found = null
     if (this._db) {
       const msg = await this._db.message.findFirst({
         where: {
@@ -126,15 +137,42 @@ class ThreadService {
             { messageId: String(replyToId) },
             { replyMessageId: String(replyToId) }
           ]
-        }
+        },
+        select: { threadId: true }
       })
-      if (msg) return this.load(msg.threadId)
+      if (msg) found = { id: msg.threadId, ephemeral: false }
     }
 
-    // Ephemeral: find via Redis msgKey, load history from Redis.
-    const threadId = await this._store.get(msgKey(replyToId))
-    if (!threadId) return null
-    const raw = await this._store.get(threadKey(threadId))
+    if (!found) {
+      const threadId = await this._store.get(msgKey(replyToId))
+      if (threadId) found = { id: threadId, ephemeral: true }
+    }
+
+    this._threadIdCache.set(cacheKey, found)
+    return found
+  }
+
+  /**
+   * Resolves the mutex key that should guard the whole
+   * resolveOrCreate -> appendPrompt -> chat -> updateReply exchange for this
+   * incoming message. Returns null when the message will start a brand-new
+   * thread (fresh random ID, nothing else can be contending for it yet).
+   */
+  async lockKeyFor (incoming) {
+    if (!incoming.replyToId) return null
+    const found = await this._findThreadId(incoming.replyToId)
+    return found?.id ?? null
+  }
+
+  async resolve (replyToId) {
+    const found = await this._findThreadId(replyToId)
+    if (!found) return null
+
+    // Non-ephemeral: full history lives in the DB.
+    if (!found.ephemeral) return this.load(found.id)
+
+    // Ephemeral: history lives in Redis.
+    const raw = await this._store.get(threadKey(found.id))
     const serialized = raw ? JSON.parse(raw) : []
     const history = await Promise.all(
       serialized.map(async (msg) => {
@@ -152,7 +190,7 @@ class ThreadService {
         return { ...msg, content: expanded }
       })
     )
-    return new Thread(threadId, history, true)
+    return new Thread(found.id, history, true)
   }
 
   async resolveOrCreate (incoming) {

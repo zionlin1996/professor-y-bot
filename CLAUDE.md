@@ -41,7 +41,7 @@ src/
   dto/
     IncomingMessage.js        ← pure DTO: parses raw Telegram msg synchronously, exposes rawContent/isValid/isCommand/inlineCommand() — no async, no DB
   services/
-    ThreadService.js          ← singleton service: thread create/load/resolve/resolveOrCreate(incoming), appendPrompt, updateReply; thread.ephemeral drives storage branching (Redis for ephemeral, DB for regular)
+    ThreadService.js          ← per-request service (fresh instance per incoming event, see DI container): thread create/load/resolve/resolveOrCreate(incoming), appendPrompt, updateReply, lockKeyFor(incoming); thread.ephemeral drives storage branching (Redis for ephemeral, DB for regular)
     LLMService.js             ← instantiatable service: backend routing, chat orchestration
   llm/
     prompts/
@@ -203,13 +203,17 @@ yarn clear-commands
 
 Each bot interaction in a group starts a **new thread** with its own isolated conversation history. Replies to any message in the thread (bot or user) continue the same thread without requiring another `@mention`.
 
-Thread management lives in `src/services/ThreadService.js`. A singleton `ThreadService` is registered in the DI container; `resolveOrCreate(incoming)` is called per message to set `this.current`:
+Thread management lives in `src/services/ThreadService.js`. `ThreadService` is instantiated fresh per incoming event via the DI container (see `src/services/index.js`); `resolveOrCreate(incoming)` is called per message to set `this.current`:
 
-Key API: `resolveOrCreate(incoming)` creates or continues a thread; `appendPrompt(prompt)` appends user message (ephemeral → Redis, regular → DB `Message` row); `updateReply(replyMessageId, { replyModel })` finalises the exchange; `resolve(replyToId)` looks up thread by message ID (DB first, Redis fallback); `load(threadId)` loads history for the archive route (ephemeral threads return empty → 404).
+Key API: `resolveOrCreate(incoming)` creates or continues a thread; `appendPrompt(prompt)` appends user message (ephemeral → Redis, regular → DB `Message` row); `updateReply(replyMessageId, { replyModel })` finalises the exchange; `resolve(replyToId)` looks up thread by message ID (DB first, Redis fallback); `load(threadId)` loads history for the archive route (ephemeral threads return empty → 404); `lockKeyFor(incoming)` does a cheap thread-id lookup (no full history load) for use as a mutex key, returning `null` when the message will start a brand-new thread.
 
 - `thread.ephemeral` — set at creation (`stealth && isPrivate`); drives all storage branching; immutable mid-conversation
 - Speaker prefix: `@handle: ` (with username) or `FirstName (id:XXXXXXXX): ` (without) — numeric ID usable with `get_user_profile`
 - Redis TTL: 7-day rolling on all keys; regular threads resolve via DB indefinitely
+
+**Concurrent replies into the same thread are serialized.** Each `ThreadService` instance is per-event, so nothing prevents two overlapping Telegram updates (e.g. two people replying into the same thread before the first reply has been answered) from calling `resolveOrCreate`/`appendPrompt`/`updateReply` concurrently — one request could load history while another's message is still unanswered (DB), or two `updateReply` calls could race and clobber each other's full-history overwrite (Redis/ephemeral). To prevent this, `index.js` computes `threadService.lockKeyFor(message)` before doing any work and, when it resolves to an existing thread id, wraps the entire `resolveOrCreate → appendPrompt → llm.chat → sendMessage → updateReply` exchange in `threadLock.acquire(lockKey, ...)`, a process-wide `AsyncLock` instance (`async-lock` package) keyed by thread id. This guarantees a second reply into a thread always sees the first exchange's fully-persisted result before proceeding, at the cost of processing overlapping replies to one thread sequentially rather than in parallel. Brand-new threads (no `replyToId`) are never locked since each gets its own fresh random id.
+
+The lock is in-process only — correct for the current single-instance deployment, but would need to be swapped for a distributed lock (e.g. Redis `SET NX PX`) if the bot is ever scaled to multiple replicas.
 
 ## System prompt files
 

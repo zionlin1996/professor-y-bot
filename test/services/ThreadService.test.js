@@ -181,6 +181,60 @@ describe('ThreadService.resolve — Redis ephemeral path', () => {
   })
 })
 
+// ── lockKeyFor ────────────────────────────────────────────────────────────────
+
+describe('ThreadService.lockKeyFor', () => {
+  it('returns null when the incoming message has no replyToId', async () => {
+    const s = makeService()
+    const key = await s.lockKeyFor({ replyToId: null })
+    assert.equal(key, null)
+  })
+
+  it('returns the DB thread id when the reply resolves via DB', async () => {
+    const db = makeDb({ firstMessage: { threadId: 'thread-xyz' } })
+    const s = makeService({ db })
+    const key = await s.lockKeyFor({ replyToId: '42' })
+    assert.equal(key, 'thread-xyz')
+  })
+
+  it('returns the Redis thread id when the reply resolves via Redis', async () => {
+    const store = makeStore({ 'msg:42': 'thread-redis-abc' })
+    const s = new ThreadService({ store, db: null, user: null })
+    const key = await s.lockKeyFor({ replyToId: '42' })
+    assert.equal(key, 'thread-redis-abc')
+  })
+
+  it('returns null when the reply does not resolve to any thread', async () => {
+    const db = makeDb({ firstMessage: null })
+    const store = makeStore({})
+    const s = new ThreadService({ store, db, user: null })
+    const key = await s.lockKeyFor({ replyToId: '999' })
+    assert.equal(key, null)
+  })
+
+  it('does not load full history (no message.findMany call)', async () => {
+    const db = makeDb({
+      firstMessage: { threadId: 'thread-xyz' },
+      messages: [{ content: 'hi', response: 'hello', attachmentFileId: null }]
+    })
+    const s = makeService({ db })
+    await s.lockKeyFor({ replyToId: '42' })
+    assert.ok(!db.calls.some((c) => c.method === 'message.findMany'))
+  })
+
+  it('memoizes the thread-id lookup: resolve() after lockKeyFor() does not re-query', async () => {
+    const db = makeDb({
+      firstMessage: { threadId: 'thread-xyz' },
+      messages: [{ content: 'hi', response: 'hello', attachmentFileId: null }]
+    })
+    const s = makeService({ db })
+    await s.lockKeyFor({ replyToId: '42' })
+    await s.resolve('42')
+    const findFirstCalls = db.calls.filter((c) => c.method === 'message.findFirst')
+    assert.equal(findFirstCalls.length, 1)
+  })
+})
+
 // ── appendPrompt ──────────────────────────────────────────────────────────────
 
 describe('ThreadService.appendPrompt — ephemeral thread', () => {
