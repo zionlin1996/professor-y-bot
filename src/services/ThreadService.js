@@ -2,17 +2,19 @@ const { randomBytes } = require('crypto')
 const { toImageBlock } = require('../libs/attachments')
 
 const threadKey = (id) => `thread:${id}`
-const msgKey = (id) => `msg:${id}`
+// Telegram message_id is only unique within a chat — always scope by chatId.
+const msgKey = (chatId, id) => `msg:${chatId}:${id}`
 
 /**
  * Lightweight thread data model. Holds history — no I/O.
  * All persistence is handled by ThreadService.
  */
 class Thread {
-  constructor (id, history = [], ephemeral = false) {
+  constructor (id, history = [], ephemeral = false, chatId = null) {
     this.id = id
     this.history = history
     this.ephemeral = ephemeral
+    this.chatId = chatId
   }
 
   append (role, content) {
@@ -74,13 +76,14 @@ class ThreadService {
 
   async create ({ chatId, ephemeral = false } = {}) {
     const id = randomBytes(16).toString('hex')
+    chatId = String(chatId ?? '')
     await this._db.thread.create({
-      data: { id, chatId: String(chatId ?? ''), ephemeral }
+      data: { id, chatId, ephemeral }
     })
     if (ephemeral) {
       await this._store.set(threadKey(id), '[]')
     }
-    return new Thread(id, [], ephemeral)
+    return new Thread(id, [], ephemeral, chatId)
   }
 
   /**
@@ -124,15 +127,20 @@ class ThreadService {
    * full history. Used both by resolve() and by lockKeyFor(), which are
    * both called for the same incoming message — memoized so the DB/Redis
    * lookup runs once per request rather than twice.
+   *
+   * Telegram message IDs are per-chat, so the lookup is always scoped by
+   * chatId to avoid cross-chat collisions.
    */
-  async _findThreadId (replyToId) {
-    const cacheKey = String(replyToId)
+  async _findThreadId (replyToId, chatId) {
+    chatId = String(chatId ?? '')
+    const cacheKey = `${chatId}:${replyToId}`
     if (this._threadIdCache.has(cacheKey)) return this._threadIdCache.get(cacheKey)
 
     let found = null
     if (this._db) {
       const msg = await this._db.message.findFirst({
         where: {
+          thread: { chatId },
           OR: [
             { messageId: String(replyToId) },
             { replyMessageId: String(replyToId) }
@@ -144,7 +152,7 @@ class ThreadService {
     }
 
     if (!found) {
-      const threadId = await this._store.get(msgKey(replyToId))
+      const threadId = await this._store.get(msgKey(chatId, replyToId))
       if (threadId) found = { id: threadId, ephemeral: true }
     }
 
@@ -160,16 +168,21 @@ class ThreadService {
    */
   async lockKeyFor (incoming) {
     if (!incoming.replyToId) return null
-    const found = await this._findThreadId(incoming.replyToId)
+    const found = await this._findThreadId(incoming.replyToId, incoming.chatId)
     return found?.id ?? null
   }
 
-  async resolve (replyToId) {
-    const found = await this._findThreadId(replyToId)
+  async resolve (replyToId, chatId) {
+    chatId = String(chatId ?? '')
+    const found = await this._findThreadId(replyToId, chatId)
     if (!found) return null
 
     // Non-ephemeral: full history lives in the DB.
-    if (!found.ephemeral) return this.load(found.id)
+    if (!found.ephemeral) {
+      const thread = await this.load(found.id)
+      thread.chatId = chatId
+      return thread
+    }
 
     // Ephemeral: history lives in Redis.
     const raw = await this._store.get(threadKey(found.id))
@@ -190,12 +203,12 @@ class ThreadService {
         return { ...msg, content: expanded }
       })
     )
-    return new Thread(found.id, history, true)
+    return new Thread(found.id, history, true, chatId)
   }
 
   async resolveOrCreate (incoming) {
     if (incoming.replyToId) {
-      this.current = await this.resolve(incoming.replyToId)
+      this.current = await this.resolve(incoming.replyToId, incoming.chatId)
     }
     if (
       !this.current &&
@@ -224,7 +237,7 @@ class ThreadService {
     thread.append('user', prompt.content)
 
     if (thread.ephemeral) {
-      await this._store.set(msgKey(prompt.messageId), thread.id)
+      await this._store.set(msgKey(thread.chatId, prompt.messageId), thread.id)
       return
     }
     if (!this._db) return
@@ -256,7 +269,7 @@ class ThreadService {
         threadKey(thread.id),
         JSON.stringify(thread.serialize())
       )
-      await this._store.set(msgKey(replyMessageId), thread.id)
+      await this._store.set(msgKey(thread.chatId, replyMessageId), thread.id)
       return
     }
 

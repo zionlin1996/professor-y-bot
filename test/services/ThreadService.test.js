@@ -144,16 +144,25 @@ describe('ThreadService.resolve — DB path', () => {
       messages: [{ content: 'hi', response: 'hello', attachmentFileId: null }]
     })
     const s = makeService({ db })
-    const t = await s.resolve('42')
+    const t = await s.resolve('42', '100')
     assert.ok(t !== null)
     assert.equal(t.id, 'thread-xyz')
+    assert.equal(t.chatId, '100')
+  })
+
+  it('scopes the DB lookup by chatId', async () => {
+    const db = makeDb()
+    const s = makeService({ db })
+    await s.resolve('42', '-100123')
+    const call = db.calls.find((c) => c.method === 'message.findFirst')
+    assert.deepEqual(call.opts.where.thread, { chatId: '-100123' })
   })
 
   it('returns null when db.message.findFirst returns nothing', async () => {
     const db = makeDb({ firstMessage: null })
     const store = makeStore()
     const s = new ThreadService({ store, db, user: null })
-    const t = await s.resolve('999')
+    const t = await s.resolve('999', '100')
     assert.equal(t, null)
   })
 })
@@ -162,22 +171,33 @@ describe('ThreadService.resolve — Redis ephemeral path', () => {
   it('returns null when db is null and Redis has no mapping', async () => {
     const store = makeStore({})
     const s = new ThreadService({ store, db: null, user: null })
-    const t = await s.resolve('42')
+    const t = await s.resolve('42', '100')
     assert.equal(t, null)
   })
 
   it('returns an ephemeral Thread from Redis when mapping exists', async () => {
     const history = [{ role: 'user', content: 'cached' }]
     const store = makeStore({
-      'msg:42': 'thread-redis-abc',
+      'msg:100:42': 'thread-redis-abc',
       'thread:thread-redis-abc': JSON.stringify(history)
     })
     const s = new ThreadService({ store, db: null, user: null })
-    const t = await s.resolve('42')
+    const t = await s.resolve('42', '100')
     assert.ok(t !== null)
     assert.equal(t.id, 'thread-redis-abc')
     assert.equal(t.ephemeral, true)
+    assert.equal(t.chatId, '100')
     assert.deepEqual(t.history, history)
+  })
+
+  it('does not resolve a message ID from a different chat', async () => {
+    const store = makeStore({
+      'msg:100:42': 'thread-redis-abc',
+      'thread:thread-redis-abc': '[]'
+    })
+    const s = new ThreadService({ store, db: null, user: null })
+    const t = await s.resolve('42', '200')
+    assert.equal(t, null)
   })
 })
 
@@ -193,14 +213,14 @@ describe('ThreadService.lockKeyFor', () => {
   it('returns the DB thread id when the reply resolves via DB', async () => {
     const db = makeDb({ firstMessage: { threadId: 'thread-xyz' } })
     const s = makeService({ db })
-    const key = await s.lockKeyFor({ replyToId: '42' })
+    const key = await s.lockKeyFor({ replyToId: '42', chatId: '100' })
     assert.equal(key, 'thread-xyz')
   })
 
   it('returns the Redis thread id when the reply resolves via Redis', async () => {
-    const store = makeStore({ 'msg:42': 'thread-redis-abc' })
+    const store = makeStore({ 'msg:100:42': 'thread-redis-abc' })
     const s = new ThreadService({ store, db: null, user: null })
-    const key = await s.lockKeyFor({ replyToId: '42' })
+    const key = await s.lockKeyFor({ replyToId: '42', chatId: '100' })
     assert.equal(key, 'thread-redis-abc')
   })
 
@@ -208,7 +228,7 @@ describe('ThreadService.lockKeyFor', () => {
     const db = makeDb({ firstMessage: null })
     const store = makeStore({})
     const s = new ThreadService({ store, db, user: null })
-    const key = await s.lockKeyFor({ replyToId: '999' })
+    const key = await s.lockKeyFor({ replyToId: '999', chatId: '100' })
     assert.equal(key, null)
   })
 
@@ -218,7 +238,7 @@ describe('ThreadService.lockKeyFor', () => {
       messages: [{ content: 'hi', response: 'hello', attachmentFileId: null }]
     })
     const s = makeService({ db })
-    await s.lockKeyFor({ replyToId: '42' })
+    await s.lockKeyFor({ replyToId: '42', chatId: '100' })
     assert.ok(!db.calls.some((c) => c.method === 'message.findMany'))
   })
 
@@ -228,8 +248,8 @@ describe('ThreadService.lockKeyFor', () => {
       messages: [{ content: 'hi', response: 'hello', attachmentFileId: null }]
     })
     const s = makeService({ db })
-    await s.lockKeyFor({ replyToId: '42' })
-    await s.resolve('42')
+    await s.lockKeyFor({ replyToId: '42', chatId: '100' })
+    await s.resolve('42', '100')
     const findFirstCalls = db.calls.filter((c) => c.method === 'message.findFirst')
     assert.equal(findFirstCalls.length, 1)
   })
@@ -247,7 +267,7 @@ describe('ThreadService.appendPrompt — ephemeral thread', () => {
     const prompt = { content: 'hi', text: 'hi', userId: '1', messageId: 'msg-1', attachment: null }
     await s.appendPrompt(prompt)
 
-    const msgSet = store.calls.find((c) => c.method === 'set' && c.key === 'msg:msg-1')
+    const msgSet = store.calls.find((c) => c.method === 'set' && c.key === 'msg:100:msg-1')
     assert.ok(msgSet, 'expected store.set for msg key')
     assert.ok(!db.calls.some((c) => c.method === 'message.create'), 'should not write to DB')
   })
@@ -320,7 +340,7 @@ describe('ThreadService.updateReply — ephemeral thread', () => {
     )
     assert.ok(threadSet, 'expected store.set for thread history')
 
-    const replySet = store.calls.find((c) => c.method === 'set' && c.key === 'msg:bot-reply-99')
+    const replySet = store.calls.find((c) => c.method === 'set' && c.key === 'msg:100:bot-reply-99')
     assert.ok(replySet, 'expected store.set for reply msgKey')
   })
 })
