@@ -461,10 +461,14 @@ bot.onCallback(async (query, services) => {
 async function main () {
   startSubscriber(bot)
 
-  await bot.setMyCommands(
-    BOT_COMMANDS.map(({ command, description }) => ({ command, description })),
-    { scope: { type: 'all_private_chats' } }
-  )
+  try {
+    await bot.setMyCommands(
+      BOT_COMMANDS.map(({ command, description }) => ({ command, description })),
+      { scope: { type: 'all_private_chats' } }
+    )
+  } catch (err) {
+    console.warn('[startup] setMyCommands failed:', err.message)
+  }
 
   const app = express()
   app.use(express.json())
@@ -491,4 +495,7 @@ async function main () {
   await setup({ app, bot }, { mode: process.env.NODE_ENV })
 }
 
-main()
+main().catch((err) => {
+  console.error('[startup] fatal:', err.message)
+  process.exit(1)
+})

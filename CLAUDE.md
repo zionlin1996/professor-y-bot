@@ -172,6 +172,8 @@ The `!info` inline action generates a shareable archive link embedded in the bot
 
 Bot commands are registered with Telegram automatically on startup via `setMyCommands`. The list is sourced from `BOT_COMMANDS` in `src/constants/commands.js`. All commands are PM only — registered under `{ type: "all_private_chats" }` scope.
 
+Registration is **non-fatal**: a `setMyCommands` failure (e.g. `429` rate limit during a restart loop) is logged as a one-line warning and startup continues. Any other startup error is caught by `main().catch(...)`, which logs a one-line message and exits with code 1. Startup errors always log `err.message` only — never the full error object, because node-telegram-bot-api errors embed the request URL, which contains the bot token.
+
 To clear all registered commands manually (e.g. after removing a command from code):
 
 ```sh
